@@ -1,0 +1,11 @@
+# Models, paths and parameters. Filled in during phase 0.
+paths:
+  raw: data/raw
+  processed: data/processed
+  results: eval/results
+llm:
+  gateway_url: ${BIFROST_URL}
+  ensemble: []        # TODO: chosen models + training cutoff dates
+eval:
+  test_sample_size: null
+  seed: 42
