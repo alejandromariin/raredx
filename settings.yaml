@@ -1,8 +1,9 @@
-# Models, paths and parameters. Filled in during phase 0.
+# Project settings: paths, budget, models. Filled in as we go.
 paths:
   raw: data/raw
   processed: data/processed
-  results: eval/results
+  results: results
+budget_usd: 50          # max total API spend for the hackathon
 llm:
   gateway_url: ${BIFROST_URL}
   ensemble: []        # TODO: chosen models + training cutoff dates

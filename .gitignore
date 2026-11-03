@@ -11,11 +11,9 @@ venv/
 # Secrets
 .env
 
-# Data (regenerated with `make data`)
-data/raw/*
-data/processed/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
+# Data: never committed, regenerated with `make data`
+data/
+*.part
 
 # LLM response cache
 .cache/

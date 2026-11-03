@@ -25,14 +25,10 @@ _TBD_
 ## Repository layout
 
 ```
-config/        settings and Bifrost provider config
-data/          downloaded and processed data (not in git; `make data`)
-src/raredx/    the pipeline: data, llm, phenotype, sources, fusion, explain, graph, api
-eval/          evaluation harness and versioned results
-frontend/      web UI
-notebooks/     exploration only
-tests/
-docs/          evaluation report, demo script
+raredx/        all the code, one file per pipeline step (data.py, ranker.py, fusion.py, ...)
+data/          downloaded and processed data (not in git; created by `make data`)
+results/       evaluation results (versioned)
+settings.yaml  paths, budget and model choices
 ```
 
 ## Use of AI tools
