@@ -19,11 +19,16 @@ llm:
     - {provider: openai,    model: gpt-6.1-sol,         cutoff: 2026-04-30}
     - {provider: gemini,    model: gemini-3.8-flash,    cutoff: null}
     - {provider: anthropic, model: claude-sonnet-5-5,   cutoff: 2026-06-30}
-    - {provider: groq,      model: openai/gpt-oss-120b, cutoff: null}
+    - {provider: groq,      model: openai/gpt-oss-120b, cutoff: 2024-07-31}  # stated Jun/Jul 2024; latest used
   # Cheap model for symptom extraction and explanations
   utility: {provider: openai, model: gpt-6-luna, cutoff: 2026-05-18}
   # Two candidates, chosen by the HPO-synonym test
   embeddings: [biolord-2023, text-embedding-3-small]
 eval:
-  test_sample_size: null
   seed: 42
+  # Cases are split by paper, so no paper has cases in two splits (share of cases)
+  split_fractions: {train: 0.7, val: 0.1, test: 0.2}
+  # Cases actually sent to the LLMs (every case costs 4 LLM calls)
+  sample_size: {train: 1000, val: 200, test: 500}
+  # Cap per paper inside each sample, so a few big cohort papers don't dominate
+  max_cases_per_paper: 5

@@ -1,0 +1,44 @@
+{
+  "train": {
+    "cases": 7230,
+    "papers": 1175,
+    "diseases": 620,
+    "sample_cases": 1000,
+    "sample_papers": 529,
+    "sample_diseases": 364,
+    "sample_diseases_not_in_train": null,
+    "sample_cases_after_cutoff": {
+      "gpt-6.1-sol": 0,
+      "claude-sonnet-5-5": 0,
+      "openai/gpt-oss-120b": 132
+    }
+  },
+  "val": {
+    "cases": 1072,
+    "papers": 221,
+    "diseases": 177,
+    "sample_cases": 200,
+    "sample_papers": 103,
+    "sample_diseases": 95,
+    "sample_diseases_not_in_train": 48,
+    "sample_cases_after_cutoff": {
+      "gpt-6.1-sol": 0,
+      "claude-sonnet-5-5": 0,
+      "openai/gpt-oss-120b": 36
+    }
+  },
+  "test": {
+    "cases": 2072,
+    "papers": 337,
+    "diseases": 252,
+    "sample_cases": 500,
+    "sample_papers": 229,
+    "sample_diseases": 194,
+    "sample_diseases_not_in_train": 81,
+    "sample_cases_after_cutoff": {
+      "gpt-6.1-sol": 0,
+      "claude-sonnet-5-5": 0,
+      "openai/gpt-oss-120b": 74
+    }
+  }
+}
