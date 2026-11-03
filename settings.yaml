@@ -6,7 +6,21 @@ paths:
 budget_usd: 50          # max total API spend for the hackathon
 llm:
   gateway_url: ${BIFROST_URL}
-  ensemble: []        # TODO: chosen models + training cutoff dates
+  reasoning_effort: low    # hidden "thinking" tokens are billed: keep it low
+  # During development only OpenAI is used (already paid). The other providers are
+  # switched on for the final evaluation; models of inactive providers are skipped.
+  active_providers: [openai]
+  # Differential-diagnosis ensemble: one model per provider.
+  # cutoff = training data cutoff, used for the contamination guard (null = not confirmed yet)
+  ensemble:
+    - {provider: openai,    model: gpt-6.1-sol,         cutoff: 2026-04-30}
+    - {provider: gemini,    model: gemini-3.8-flash,    cutoff: null}
+    - {provider: anthropic, model: claude-sonnet-5-5,   cutoff: 2026-06-30}
+    - {provider: groq,      model: openai/gpt-oss-120b, cutoff: null}
+  # Cheap model for symptom extraction and explanations
+  utility: {provider: openai, model: gpt-6-luna, cutoff: 2026-05-18}
+  # Two candidates, chosen by the HPO-synonym test
+  embeddings: [biolord-2023, text-embedding-3-small]
 eval:
   test_sample_size: null
   seed: 42

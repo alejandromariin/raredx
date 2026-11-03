@@ -35,6 +35,15 @@ settings.yaml  paths, budget and model choices
 
 _TBD (required by the hackathon rules)._
 
+## Data sources and attribution
+
+The data is not stored in this repository: `make data` downloads it from the original sources.
+
+- **Human Phenotype Ontology (HPO)** and its disease annotations. This product uses the Human Phenotype Ontology (version recorded in the downloaded files), https://hpo.jax.org. HPO files are used unmodified and are not redistributed.
+- **phenopacket-store** (GA4GH / Monarch Initiative), BSD-3-Clause.
+- **Orphanet / Orphadata**, CC BY 4.0.
+- **PubMed** (NCBI E-utilities), for publication dates.
+
 ## License
 
-MIT. Data sources keep their own licenses.
+MIT for the code in this repository. Each data source keeps its own license.
