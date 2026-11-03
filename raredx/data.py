@@ -28,6 +28,12 @@ PROCESSED = ROOT / "data" / "processed"
 # 1. DOWNLOAD
 # =============================================================================
 
+# Fixed versions so everyone (and every rerun) gets exactly the same data.
+# Orphadata has no versioned download links: it publishes a new release every July
+# and December, so its files may change between runs.
+PHENOPACKET_STORE_VERSION = "0.1.27"
+HPO_VERSION = "v2026-09-01"
+
 SOURCES: dict[str, str] = {
     # 1. REAL PATIENTS (phenopacket-store)
     # About 10,000 patients taken from medical papers, one per file.
@@ -38,7 +44,7 @@ SOURCES: dict[str, str] = {
     #   - Training the fusion model (LightGBM).
     #   - Evaluating the system: measuring how often it gets the diagnosis right.
     #   - Providing the example cases for the demo.
-    "all_phenopackets.zip": "https://github.com/monarch-initiative/phenopacket-store/releases/latest/download/all_phenopackets.zip",
+    "all_phenopackets.zip": f"https://github.com/monarch-initiative/phenopacket-store/releases/download/{PHENOPACKET_STORE_VERSION}/all_phenopackets.zip",
 
     # 2. SYMPTOM DICTIONARY (HPO ontology)
     # About 20,000 symptoms, each with a code, name, synonyms and "parents".
@@ -49,7 +55,7 @@ SOURCES: dict[str, str] = {
     #     ("spider fingers" -> HP:0001166).
     #   - Letting the ranker know which symptoms are related and which are rare
     #     (rare ones count more).
-    "hp.json": "https://github.com/obophenotype/human-phenotype-ontology/releases/latest/download/hp.json",
+    "hp.json": f"https://github.com/obophenotype/human-phenotype-ontology/releases/download/{HPO_VERSION}/hp.json",
 
     # 3. SYMPTOMS OF EACH DISEASE (HPO annotations)
     # A "disease -> symptom" table, with how often it appears and the paper that backs it.
@@ -61,7 +67,7 @@ SOURCES: dict[str, str] = {
     #   - Picking the most useful next test.
     #   - Anti-cheating guard: dropping anything that comes from the same paper as the
     #     case being evaluated.
-    "phenotype.hpoa": "https://github.com/obophenotype/human-phenotype-ontology/releases/latest/download/phenotype.hpoa",
+    "phenotype.hpoa": f"https://github.com/obophenotype/human-phenotype-ontology/releases/download/{HPO_VERSION}/phenotype.hpoa",
 
     # 4. DISEASE CODE TRANSLATOR (Orphanet)
     # Every rare disease in Orphanet with its names and its OMIM equivalent.
