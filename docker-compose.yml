@@ -1,0 +1,11 @@
+# Bifrost: the single gateway every LLM call goes through.
+# Start it with `make gateway`; it listens on http://localhost:8080
+services:
+  bifrost:
+    image: maximhq/bifrost:v1.3.9
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./bifrost:/app/data      # config.json lives here; Bifrost also writes its logs DB here
+    env_file: .env               # provider API keys (never committed)
+    restart: unless-stopped

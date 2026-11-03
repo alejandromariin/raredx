@@ -1,9 +1,15 @@
 PYTHON ?= python3
 
-.PHONY: data train eval app
+.PHONY: data gateway gateway-stop train eval app
 
 data:   ## Download and process all datasets
 	$(PYTHON) -m raredx.data
+
+gateway:  ## Start Bifrost (LLM gateway) on http://localhost:8080
+	docker compose up -d bifrost
+
+gateway-stop:
+	docker compose down
 
 train:  ## Train the fusion model
 	@echo "TODO"

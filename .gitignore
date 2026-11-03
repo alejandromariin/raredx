@@ -18,6 +18,10 @@ data/
 # LLM response cache
 .cache/
 
+# Bifrost runtime files (only config.json is committed)
+bifrost/*
+!bifrost/config.json
+
 # Frontend
 node_modules/
 frontend/dist/
