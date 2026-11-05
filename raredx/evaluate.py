@@ -128,12 +128,66 @@ def make_splits() -> dict:
     return summary
 
 
+# =============================================================================
+# METRICS
+# For each case we know the position of the correct disease in the ranking.
+#   top-k = share of cases where it is among the first k
+#   MRR   = average of 1/position (1 if always first, 0.5 if always second...)
+# 95% confidence intervals by bootstrap: resample the cases 1,000 times.
+# =============================================================================
+
+def metrics(ranks: list[float | None], seed: int = 42, n_boot: int = 1000) -> dict:
+    import numpy as np
+    r = np.array([x if x is not None else np.inf for x in ranks], dtype=float)
+
+    def summary(v):
+        return {
+            "top1": float(np.mean(v <= 1)), "top5": float(np.mean(v <= 5)),
+            "top10": float(np.mean(v <= 10)), "mrr": float(np.mean(1 / v)),
+        }
+
+    point = summary(r)
+    rng = np.random.default_rng(seed)
+    boots = [summary(r[rng.integers(0, len(r), len(r))]) for _ in range(n_boot)]
+    out = {"cases": len(r), "unknown_disease": int(np.isinf(r).sum())}
+    for k, v in point.items():
+        lo, hi = np.percentile([b[k] for b in boots], [2.5, 97.5])
+        out[k] = {"value": round(v, 3), "ci95": [round(float(lo), 3), round(float(hi), 3)]}
+    return out
+
+
+def sample_cases_of(split: str) -> list[dict]:
+    ids = set((RESULTS / "samples" / f"{split}.txt").read_text().split())
+    return [c for c in load_cases() if c["case_id"] in ids]
+
+
+def eval_ranker(split: str) -> dict:
+    """Ontology ranker alone, with and without leakage guard 1."""
+    from .ranker import OntologyRanker
+    ranker = OntologyRanker()
+    cases = sample_cases_of(split)
+    result = {}
+    for name, guard in [("with_guard", True), ("without_guard", False)]:
+        ranks = [
+            ranker.rank_of(c["disease_id"], c["hpo_present"], c["hpo_excluded"],
+                           exclude_ref=c["pmid"] if guard else None)
+            for c in cases
+        ]
+        result[name] = metrics(ranks)
+    (RESULTS / "baselines").mkdir(parents=True, exist_ok=True)
+    (RESULTS / "baselines" / f"ranker_{split}.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split"])
+    parser.add_argument("command", choices=["split", "ranker"])
+    parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     args = parser.parse_args()
     if args.command == "split":
         print(json.dumps(make_splits(), indent=2))
+    elif args.command == "ranker":
+        print(json.dumps(eval_ranker(args.split), indent=2))
 
 
 if __name__ == "__main__":
