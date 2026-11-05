@@ -1,0 +1,148 @@
+"""LLM client: every call to a language model in the project goes through here.
+
+It does three things:
+  1. CALL a model through Bifrost (our gateway on http://localhost:8080).
+     Example: ask("openai/gpt-6-luna", [{"role": "user", "content": "Reply only: OK"}])
+  2. CACHE: the exact same question to the same model is answered from disk, for free.
+     Re-running an evaluation therefore costs nothing for the calls already made.
+  3. SPEND LIMIT: every call's cost is recorded; once the total reaches `budget_usd`
+     from settings.yaml (50 $), new calls are refused.
+
+Cache and spend live in .cache/llm.sqlite (not committed).
+Command line:
+  python -m raredx.llm ping     # one tiny test call through Bifrost
+  python -m raredx.llm spend    # how much we have spent so far
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sqlite3
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+CACHE_DB = ROOT / ".cache" / "llm.sqlite"
+
+
+class BudgetExceeded(RuntimeError):
+    pass
+
+
+def _load_env() -> None:
+    env = ROOT / ".env"
+    if env.exists():
+        for line in env.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if v.strip():
+                    os.environ.setdefault(k.strip(), v.strip())
+
+
+class LLMClient:
+    def __init__(self, settings: dict | None = None, db_path: Path = CACHE_DB):
+        _load_env()
+        cfg = settings or yaml.safe_load((ROOT / "settings.yaml").read_text(encoding="utf-8"))
+        self.budget = float(cfg["budget_usd"])
+        self.prices = cfg["llm"]["prices"]
+        self.active = set(cfg["llm"]["active_providers"])
+        self.reasoning_effort = cfg["llm"].get("reasoning_effort")
+        self.url = os.environ.get("BIFROST_URL", "http://localhost:8080").rstrip("/")
+
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(db_path)
+        self.db.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, response TEXT)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS spend (ts REAL, model TEXT, tokens_in INT, tokens_out INT, usd REAL)")
+        self.db.commit()
+
+    # ------------------------------------------------------------------ spend
+    def spent(self) -> float:
+        return self.db.execute("SELECT COALESCE(SUM(usd), 0) FROM spend").fetchone()[0]
+
+    def _cost(self, model: str, tokens_in: int, tokens_out: int) -> float:
+        # "openai/gpt-6-luna" -> "gpt-6-luna"; "groq/openai/gpt-oss-120b" -> "openai/gpt-oss-120b"
+        price = self.prices.get(model.split("/", 1)[-1])
+        if price is None:
+            raise KeyError(f"No price for {model} in settings.yaml (llm.prices)")
+        return (tokens_in * price[0] + tokens_out * price[1]) / 1_000_000
+
+    # ------------------------------------------------------------------ call
+    def ask(self, model: str, messages: list[dict], temperature: float | None = None, **extra) -> dict:
+        """Ask `model` ("provider/model", e.g. "openai/gpt-6-luna"). Returns
+        {"text", "tokens_in", "tokens_out", "usd", "cached"}.
+        temperature is not sent by default: reasoning models (e.g. GPT-6) only accept
+        their default value. Repeatability comes from the cache instead."""
+        provider = model.split("/", 1)[0]
+        if provider not in self.active:
+            raise RuntimeError(f"Provider '{provider}' is not active (settings.yaml: llm.active_providers)")
+
+        body = {"model": model, "messages": messages, **extra}
+        if temperature is not None:
+            body["temperature"] = temperature
+        if self.reasoning_effort and "reasoning_effort" not in body:
+            body["reasoning_effort"] = self.reasoning_effort
+
+        # 2. CACHE: same model + same request = same key
+        key = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone()
+        if row:
+            return {**json.loads(row[0]), "usd": 0.0, "cached": True}
+
+        # 3. SPEND LIMIT
+        if self.spent() >= self.budget:
+            raise BudgetExceeded(f"Spent {self.spent():.2f} $ of {self.budget:.2f} $; refusing new calls")
+
+        # 1. CALL through Bifrost (retries on rate limits and server errors)
+        data = self._post("/v1/chat/completions", body)
+        usage = data.get("usage", {})
+        result = {
+            "text": data["choices"][0]["message"].get("content") or "",
+            "tokens_in": usage.get("prompt_tokens", 0),
+            "tokens_out": usage.get("completion_tokens", 0),
+        }
+        usd = self._cost(model, result["tokens_in"], result["tokens_out"])
+        self.db.execute("INSERT INTO spend VALUES (?, ?, ?, ?, ?)", (time.time(), model, result["tokens_in"], result["tokens_out"], usd))
+        self.db.execute("INSERT OR REPLACE INTO cache VALUES (?, ?)", (key, json.dumps(result)))
+        self.db.commit()
+        return {**result, "usd": usd, "cached": False}
+
+    def _post(self, path: str, body: dict, attempts: int = 4) -> dict:
+        req = urllib.request.Request(
+            self.url + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
+        )
+        for i in range(attempts):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    return json.load(resp)
+            except urllib.error.HTTPError as err:
+                detail = err.read().decode(errors="replace")[:500]
+                if err.code in (429, 500, 502, 503, 504) and i < attempts - 1:
+                    time.sleep(2 ** i)  # 1 s, 2 s, 4 s
+                    continue
+                raise RuntimeError(f"Bifrost returned {err.code}: {detail}") from None
+            except urllib.error.URLError as err:
+                raise RuntimeError(f"Cannot reach Bifrost at {self.url} (is it running? `make gateway`): {err.reason}") from None
+        raise RuntimeError("unreachable")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("command", choices=["ping", "spend"])
+    args = parser.parse_args()
+    client = LLMClient()
+    if args.command == "ping":
+        for attempt in ("first call", "same call again"):
+            r = client.ask("openai/gpt-6-luna", [{"role": "user", "content": "Reply only: OK"}])
+            print(f"{attempt}: {r['text']!r} | cached={r['cached']} | cost={r['usd']:.6f} $")
+    print(f"total spent: {client.spent():.4f} $ of {client.budget:.2f} $")
+
+
+if __name__ == "__main__":
+    main()

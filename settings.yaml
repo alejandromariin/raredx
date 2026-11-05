@@ -24,6 +24,14 @@ llm:
   utility: {provider: openai, model: gpt-6-luna, cutoff: 2026-05-18}
   # Two candidates, chosen by the HPO-synonym test
   embeddings: [biolord-2023, text-embedding-3-small]
+  # USD per 1M tokens [input, output], used to track spend against budget_usd
+  prices:
+    gpt-6.1-sol: [2.00, 10.00]
+    gpt-6-luna: [0.10, 0.50]
+    gemini-3.8-flash: [0.75, 3.75]
+    claude-sonnet-5-5: [2.00, 10.00]
+    openai/gpt-oss-120b: [0.15, 0.60]
+    text-embedding-3-small: [0.02, 0.00]
 eval:
   seed: 42
   # Cases are split by paper, so no paper has cases in two splits (share of cases)
