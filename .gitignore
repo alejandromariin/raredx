@@ -15,6 +15,9 @@ venv/
 data/
 *.part
 
+# Quick test runs (--limit); only full evaluations are versioned
+results/baselines/*_first*.json
+
 # LLM response cache
 .cache/
 
