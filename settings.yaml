@@ -40,3 +40,9 @@ eval:
   sample_size: {train: 1000, val: 200, test: 500}
   # Cap per paper inside each sample, so a few big cohort papers don't dominate
   max_cases_per_paper: 5
+fusion:
+  # LLMs whose answers feed the fusion. During development only the cheap one;
+  # for the final evaluation, the four ensemble models.
+  models: [openai/gpt-6-luna]
+  ranker_top: 50               # candidates taken from the ranker per patient
+  learning_curve: [250, 500, 1000]

@@ -207,9 +207,80 @@ def eval_llm(model: str, split: str, limit: int | None = None) -> dict:
     return result
 
 
+def _subset(ds: dict, case_idx: list[int]) -> dict:
+    """The rows of some patients only (to train on 250 / 500 / 1,000 of them)."""
+    import numpy as np
+    starts = np.cumsum([0] + ds["groups"])
+    rows = np.concatenate([np.arange(starts[i], starts[i + 1]) for i in case_idx])
+    return {"X": ds["X"][rows], "y": ds["y"][rows], "groups": [ds["groups"][i] for i in case_idx],
+            "candidates": [ds["candidates"][i] for i in case_idx], "gold": [ds["gold"][i] for i in case_idx]}
+
+
+def eval_fusion(models: list[str] | None = None) -> dict:
+    """Train the fusion on the train sample, evaluate on validation, against the references."""
+    import numpy as np
+    from .ensemble import Ensemble
+    from .fusion import FeatureBuilder, LightGBMFusion, LogRegFusion, NOT_LISTED, ranks_from_scores, rrf_scores
+    from .ranker import OntologyRanker
+
+    cfg = load_settings()["fusion"]
+    models = models or cfg["models"]
+    ranker = OntologyRanker()
+    fb = FeatureBuilder(ranker, Ensemble(onto=ranker.onto), models, cfg["ranker_top"])
+    print("building tables (train)...", flush=True)
+    train = fb.dataset(sample_cases_of("train"))
+    print("building tables (val)...", flush=True)
+    val = fb.dataset(sample_cases_of("val"))
+    cols = fb.columns
+
+    covered = sum(g in names for g, names in zip(val["gold"], val["candidates"]))
+    result = {"models_used": models, "train_cases": len(train["groups"]), "val_cases": len(val["groups"]),
+              "val_correct_among_candidates": round(covered / len(val["groups"]), 3), "results": {}}
+
+    # References without learning
+    result["results"]["ranker_alone"] = metrics(ranks_from_scores(val, val["X"][:, cols.index("ranker_score")]))
+    for m in models:
+        pos = val["X"][:, cols.index(f"{m}:pos")]
+        result["results"][f"llm_alone:{m}"] = metrics(ranks_from_scores(val, np.where(pos < NOT_LISTED, -pos, -np.inf)))
+    result["results"]["rrf_no_learning"] = metrics(ranks_from_scores(val, rrf_scores(val, cols)))
+
+    # Learned fusion
+    learners = [LogRegFusion]
+    try:
+        import lightgbm  # noqa: F401
+        learners.append(LightGBMFusion)
+    except ImportError:
+        print("lightgbm not installed: skipping it")
+    fitted = {}
+    for L in learners:
+        model = L().fit(train)
+        fitted[L.name] = model
+        result["results"][f"fusion:{L.name}"] = metrics(ranks_from_scores(val, model.score(val)))
+
+    # Learning curve: does it keep improving with more training patients?
+    best = fitted.get(LightGBMFusion.name) and LightGBMFusion or LogRegFusion
+    order = random.Random(42).sample(range(len(train["groups"])), len(train["groups"]))
+    curve = {}
+    for n in cfg["learning_curve"]:
+        if n > len(order):
+            continue
+        m = best().fit(_subset(train, order[:n]))
+        r = metrics(ranks_from_scores(val, m.score(val)), n_boot=200)
+        curve[n] = {"top1": r["top1"]["value"], "top10": r["top10"]["value"]}
+    result["learning_curve"] = {"model": best.name, "val_by_train_size": curve}
+
+    if LightGBMFusion.name in fitted:
+        gains = fitted[LightGBMFusion.name].model.booster_.feature_importance("gain")
+        top = sorted(zip(cols, gains), key=lambda x: -x[1])[:10]
+        result["most_useful_columns"] = {c: round(float(g), 1) for c, g in top}
+
+    (RESULTS / "fusion_val.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`: only the first N cases")
@@ -220,6 +291,8 @@ def main() -> None:
         print(json.dumps(eval_ranker(args.split), indent=2))
     elif args.command == "llm":
         print(json.dumps(eval_llm(args.model, args.split, args.limit), indent=2))
+    elif args.command == "fusion":
+        print(json.dumps(eval_fusion(), indent=2))
 
 
 if __name__ == "__main__":
