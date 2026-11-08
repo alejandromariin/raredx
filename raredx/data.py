@@ -69,6 +69,13 @@ SOURCES: dict[str, str] = {
     #     case being evaluated.
     "phenotype.hpoa": f"https://github.com/obophenotype/human-phenotype-ontology/releases/download/{HPO_VERSION}/phenotype.hpoa",
 
+    # 3b. WHICH DISEASES EACH GENE CAUSES (HPO)
+    # Example: gene MED13L -> OMIM:616789.
+    # What it's for:
+    #   - Translating disease names that LLMs give by gene ("MED13L syndrome",
+    #     "KAT6B-related disorder") into OMIM codes.
+    "genes_to_disease.txt": f"https://github.com/obophenotype/human-phenotype-ontology/releases/download/{HPO_VERSION}/genes_to_disease.txt",
+
     # 4. DISEASE CODE TRANSLATOR (Orphanet)
     # Every rare disease in Orphanet with its names and its OMIM equivalent.
     # Example: ORPHA:558 = Marfan = OMIM:154700.

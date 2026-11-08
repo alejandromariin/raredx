@@ -149,7 +149,7 @@ def metrics(ranks: list[float | None], seed: int = 42, n_boot: int = 1000) -> di
     point = summary(r)
     rng = np.random.default_rng(seed)
     boots = [summary(r[rng.integers(0, len(r), len(r))]) for _ in range(n_boot)]
-    out = {"cases": len(r), "unknown_disease": int(np.isinf(r).sum())}
+    out = {"cases": len(r), "correct_not_ranked": int(np.isinf(r).sum())}
     for k, v in point.items():
         lo, hi = np.percentile([b[k] for b in boots], [2.5, 97.5])
         out[k] = {"value": round(v, 3), "ci95": [round(float(lo), 3), round(float(hi), 3)]}
@@ -179,15 +179,47 @@ def eval_ranker(split: str) -> dict:
     return result
 
 
+def eval_llm(model: str, split: str, limit: int | None = None) -> dict:
+    """One LLM alone: position of the correct disease in its top-10 list."""
+    from collections import Counter
+    from .ensemble import Ensemble
+    ens = Ensemble()
+    cases = sample_cases_of(split)
+    if limit:   # quick runs: a random, spread-out subset (the sample list is sorted by paper)
+        cases = random.Random(42).sample(cases, min(limit, len(cases)))
+    ranks, how, usd, cached = [], Counter(), 0.0, 0
+    for i, c in enumerate(cases, 1):
+        r = ens.diagnose(c, model)
+        ranks.append(Ensemble.rank_of(c["disease_id"], r))
+        how.update(x["how"] for x in r["candidates"])
+        usd += r["usd"]; cached += r["cached"]
+        print(f"  {i}/{len(cases)} rank={ranks[-1]} cost so far={usd:.4f} $", flush=True)
+    result = {
+        "model": model, "split": split,
+        "metrics": metrics(ranks),
+        "not_in_top10": sum(r is None for r in ranks),
+        "name_translation": dict(how),              # how each proposed name was turned into codes
+        "usd_this_run": round(usd, 4), "cached_calls": cached,
+    }
+    slug = model.replace("/", "_") + f"_{split}" + (f"_first{limit}" if limit else "")
+    (RESULTS / "baselines").mkdir(parents=True, exist_ok=True)
+    (RESULTS / "baselines" / f"llm_{slug}.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker"])
+    parser.add_argument("command", choices=["split", "ranker", "llm"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
+    parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
+    parser.add_argument("--limit", type=int, default=None, help="for `llm`: only the first N cases")
     args = parser.parse_args()
     if args.command == "split":
         print(json.dumps(make_splits(), indent=2))
     elif args.command == "ranker":
         print(json.dumps(eval_ranker(args.split), indent=2))
+    elif args.command == "llm":
+        print(json.dumps(eval_llm(args.model, args.split, args.limit), indent=2))
 
 
 if __name__ == "__main__":
