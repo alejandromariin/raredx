@@ -1,0 +1,199 @@
+{
+  "models_used": [
+    "openai/gpt-6-luna"
+  ],
+  "train_cases": 1000,
+  "val_cases": 200,
+  "val_correct_among_candidates": 0.415,
+  "results": {
+    "ranker_alone": {
+      "cases": 200,
+      "correct_not_ranked": 117,
+      "top1": {
+        "value": 0.14,
+        "ci95": [
+          0.095,
+          0.19
+        ]
+      },
+      "top5": {
+        "value": 0.24,
+        "ci95": [
+          0.185,
+          0.305
+        ]
+      },
+      "top10": {
+        "value": 0.24,
+        "ci95": [
+          0.185,
+          0.305
+        ]
+      },
+      "mrr": {
+        "value": 0.183,
+        "ci95": [
+          0.14,
+          0.236
+        ]
+      }
+    },
+    "llm_alone:openai/gpt-6-luna": {
+      "cases": 200,
+      "correct_not_ranked": 117,
+      "top1": {
+        "value": 0.145,
+        "ci95": [
+          0.1,
+          0.19
+        ]
+      },
+      "top5": {
+        "value": 0.245,
+        "ci95": [
+          0.19,
+          0.305
+        ]
+      },
+      "top10": {
+        "value": 0.27,
+        "ci95": [
+          0.215,
+          0.335
+        ]
+      },
+      "mrr": {
+        "value": 0.193,
+        "ci95": [
+          0.148,
+          0.243
+        ]
+      }
+    },
+    "rrf_no_learning": {
+      "cases": 200,
+      "correct_not_ranked": 117,
+      "top1": {
+        "value": 0.125,
+        "ci95": [
+          0.085,
+          0.175
+        ]
+      },
+      "top5": {
+        "value": 0.185,
+        "ci95": [
+          0.135,
+          0.24
+        ]
+      },
+      "top10": {
+        "value": 0.32,
+        "ci95": [
+          0.26,
+          0.385
+        ]
+      },
+      "mrr": {
+        "value": 0.175,
+        "ci95": [
+          0.134,
+          0.227
+        ]
+      }
+    },
+    "fusion:logistic_regression": {
+      "cases": 200,
+      "correct_not_ranked": 117,
+      "top1": {
+        "value": 0.16,
+        "ci95": [
+          0.115,
+          0.22
+        ]
+      },
+      "top5": {
+        "value": 0.24,
+        "ci95": [
+          0.185,
+          0.3
+        ]
+      },
+      "top10": {
+        "value": 0.28,
+        "ci95": [
+          0.22,
+          0.345
+        ]
+      },
+      "mrr": {
+        "value": 0.205,
+        "ci95": [
+          0.161,
+          0.263
+        ]
+      }
+    },
+    "fusion:lightgbm_lambdarank": {
+      "cases": 200,
+      "correct_not_ranked": 117,
+      "top1": {
+        "value": 0.235,
+        "ci95": [
+          0.175,
+          0.295
+        ]
+      },
+      "top5": {
+        "value": 0.315,
+        "ci95": [
+          0.255,
+          0.385
+        ]
+      },
+      "top10": {
+        "value": 0.335,
+        "ci95": [
+          0.275,
+          0.4
+        ]
+      },
+      "mrr": {
+        "value": 0.273,
+        "ci95": [
+          0.216,
+          0.332
+        ]
+      }
+    }
+  },
+  "learning_curve": {
+    "model": "lightgbm_lambdarank",
+    "val_by_train_size": {
+      "250": {
+        "top1": 0.21,
+        "top10": 0.35
+      },
+      "500": {
+        "top1": 0.215,
+        "top10": 0.34
+      },
+      "1000": {
+        "top1": 0.235,
+        "top10": 0.335
+      }
+    }
+  },
+  "most_useful_columns": {
+    "openai/gpt-6-luna:pos": 23235.5,
+    "ranker_pos_log": 6604.7,
+    "disease_annotations_log": 5986.0,
+    "ranker_gap": 3206.2,
+    "ranker_score": 2362.9,
+    "ranker_rel": 2191.9,
+    "case_n_excluded": 2142.8,
+    "case_n_present": 1641.7,
+    "case_mean_ic": 1489.7,
+    "prevalence_log10": 883.8
+  }
+}
