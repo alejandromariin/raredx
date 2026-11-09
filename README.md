@@ -35,7 +35,7 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 
 - **Split by paper.** Train / validation / test are split by source publication, never by patient (70 / 10 / 20 %). Samples of 1,000 / 200 / 500 cases, at most 5 per paper; the exact case lists are versioned in `results/samples/`.
 - **Leakage guard.** When a case is evaluated, the ranker ignores every HPO annotation derived from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 %), artificially.
-- **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model (gpt-oss-120b, cutoff July 2024; 1,337 later cases).
+- **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases (`results/contamination.json`).
 - **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
 
 ### Preliminary results (validation, 200 cases, GPT-6 Luna as the only LLM)
@@ -77,6 +77,7 @@ python3 -m raredx.evaluate llm --model openai/gpt-6-luna --split val   # one LLM
 python3 -m raredx.evaluate fusion                                      # train + evaluate the fusion
 python3 -m raredx.evaluate ablation                                    # remove one group of columns at a time
 python3 -m raredx.evaluate timing                                      # cost and time per patient
+python3 -m raredx.evaluate contamination                               # older vs newer cases (gpt-oss-120b)
 ```
 
 ## Repository layout

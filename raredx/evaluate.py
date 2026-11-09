@@ -397,13 +397,112 @@ def eval_fusion(models: list[str] | None = None) -> dict:
     (RESULTS / "fusion_val.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
+# =============================================================================
+# CONTAMINATION (RE6): did the LLM memorise the published cases?
+# An LLM may have read a paper during training. Then it "remembers" the answer
+# instead of reasoning. Test: compare its accuracy on cases published BEFORE its
+# training cutoff (it may have read them) and AFTER (it cannot have).
+# Fair comparison:
+#   - same diseases in both groups (pairs: one older and one newer case of the
+#     same disease), so the newer group is not just "rarer, newer diseases";
+#   - the ontology ranker (no cutoff, with leakage guard) runs on the same cases
+#     as a difficulty check: if the ranker also drops, the newer cases are simply
+#     harder; if only the LLM drops, that points to memorisation.
+# Example: LLM 30% before vs 15% after, ranker 20% vs 19% -> suspicious.
+# Runs on all cases (not only the samples): this model is not part of the fusion,
+# so nothing leaks into training or test.
+# =============================================================================
+
+def contamination_pairs(max_per_disease: int = 3, seed: int = 42) -> list[tuple[dict, dict]]:
+    """(older case, newer case) pairs of the same disease, around the model's cutoff."""
+    cut = str(load_settings()["llm"]["contamination_model"]["cutoff"])
+    dates = load_pub_dates()
+    rng = random.Random(seed)
+    older, newer = defaultdict(list), defaultdict(list)
+    for c in load_cases():
+        (newer if dates[c["pmid"]] > cut else older)[c["disease_id"]].append(c)
+
+    def spread(cs: list[dict], n: int) -> list[dict]:
+        """n cases, from as many different papers as possible."""
+        rng.shuffle(cs)
+        by_paper = defaultdict(list)
+        for c in cs:
+            by_paper[c["pmid"]].append(c)
+        out = []
+        while len(out) < n and any(by_paper.values()):
+            for pmid in list(by_paper):
+                if by_paper[pmid] and len(out) < n:
+                    out.append(by_paper[pmid].pop())
+        return out
+
+    pairs = []
+    for disease in sorted(set(older) & set(newer)):
+        n = min(max_per_disease, len(older[disease]), len(newer[disease]))
+        pairs += list(zip(spread(older[disease], n), spread(newer[disease], n)))
+    return pairs
+
+
+def eval_contamination(limit: int | None = None) -> dict:
+    import numpy as np
+    from .ensemble import Ensemble
+    from .llm import RateLimited
+    from .ranker import OntologyRanker
+    model_cfg = load_settings()["llm"]["contamination_model"]
+    model = f"{model_cfg['provider']}/{model_cfg['model']}"
+    pairs = contamination_pairs()
+    if limit:
+        pairs = random.Random(42).sample(pairs, min(limit, len(pairs)))
+    ranker = OntologyRanker()
+    ens = Ensemble(onto=ranker.onto)
+
+    ranks = {"llm": {"before": [], "after": []}, "ranker": {"before": [], "after": []}}
+    for i, pair in enumerate(pairs, 1):
+        for when, c in zip(("before", "after"), pair):
+            try:
+                r = ens.diagnose(c, model)
+            except RateLimited as err:
+                print(f"\nStopped at pair {i}/{len(pairs)}: {err}\n"
+                      "Done calls are cached. Run the same command again later and it will continue.")
+                raise SystemExit(1)
+            ranks["llm"][when].append(Ensemble.rank_of(c["disease_id"], r))
+            ranks["ranker"][when].append(ranker.rank_of(
+                c["disease_id"], c["hpo_present"], c["hpo_excluded"], exclude_ref=c["pmid"]))
+        print(f"  {i}/{len(pairs)} llm before={ranks['llm']['before'][-1]} after={ranks['llm']['after'][-1]}", flush=True)
+
+    def hit10(rs):
+        return np.array([r is not None and r <= 10 for r in rs], dtype=float)
+
+    # Paired bootstrap of the drop (before - after) in top-10, resampling pairs
+    rng = np.random.default_rng(42)
+    idx = [rng.integers(0, len(pairs), len(pairs)) for _ in range(1000)]
+    drop = {}
+    for src in ("llm", "ranker"):
+        d = hit10(ranks[src]["before"]) - hit10(ranks[src]["after"])
+        lo, hi = np.percentile([d[j].mean() for j in idx], [2.5, 97.5])
+        drop[src] = {"value": round(float(d.mean()), 3), "ci95": [round(float(lo), 3), round(float(hi), 3)]}
+    dd = (hit10(ranks["llm"]["before"]) - hit10(ranks["llm"]["after"])) \
+        - (hit10(ranks["ranker"]["before"]) - hit10(ranks["ranker"]["after"]))
+    lo, hi = np.percentile([dd[j].mean() for j in idx], [2.5, 97.5])
+
+    result = {
+        "model": model, "cutoff": str(model_cfg["cutoff"]),
+        "pairs": len(pairs), "diseases": len({a["disease_id"] for a, _ in pairs}),
+        "metrics": {src: {w: metrics(ranks[src][w]) for w in ("before", "after")} for src in ranks},
+        "top10_drop_before_minus_after": drop,
+        # > 0 means the LLM loses more than the ranker on newer cases: a sign of memorisation
+        "llm_drop_minus_ranker_drop": {"value": round(float(dd.mean()), 3),
+                                       "ci95": [round(float(lo), 3), round(float(hi), 3)]},
+    }
+    (RESULTS / "contamination.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
-    parser.add_argument("--limit", type=int, default=None, help="for `llm`: only the first N cases")
+    parser.add_argument("--limit", type=int, default=None, help="for `llm`/`contamination`: a random subset of N cases/pairs")
     args = parser.parse_args()
     if args.command == "split":
         print(json.dumps(make_splits(), indent=2))
@@ -417,6 +516,8 @@ def main() -> None:
         print(json.dumps(eval_ablation(), indent=2))
     elif args.command == "timing":
         print(json.dumps(eval_timing(args.limit or 10), indent=2))
+    elif args.command == "contamination":
+        print(json.dumps(eval_contamination(args.limit), indent=2))
 
 
 if __name__ == "__main__":
