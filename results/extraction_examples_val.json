@@ -1,0 +1,90 @@
+[
+  {
+    "case_id": "PMID_39962046_R_II_1",
+    "note": "I am referring this 2-year-6-month-old girl for clinical genetic assessment. She has a small head circumference, low-set ears, and nostrils that tilt forward. Her history includes episodes of bluish discoloration, low muscle tone, a stroke, and global developmental delay. She has had poor growth, including short stature and failure to thrive, with vomiting; she required gastrostomy tube feeding during infancy. There is no history of seizures or increased muscle tone. Eye assessment has not shown cataracts, farsightedness, pale optic discs, a white pupillary reflex, unusually small eyes, involuntary eye movements, alternating inward deviation of the eyes, or reduced visual acuity.",
+    "original": [
+      "Microcephaly",
+      "Low-set ears",
+      "Anteverted nares",
+      "Cyanosis",
+      "Hypotonia",
+      "Global developmental delay",
+      "Stroke",
+      "Failure to thrive",
+      "Vomiting",
+      "Short stature",
+      "Gastrostomy tube feeding in infancy",
+      "Thin corpus callosum"
+    ],
+    "extracted": [
+      "+ Microcephaly -> Microcephaly",
+      "+ Low-set ears -> Low-set ears",
+      "+ Anteverted nares -> Anteverted nares",
+      "+ Cyanosis -> Cyanosis",
+      "+ Hypotonia -> Hypotonia",
+      "+ Stroke -> Stroke",
+      "+ Global developmental delay -> Global developmental delay",
+      "+ Poor growth -> Growth delay",
+      "+ Short stature -> Short stature",
+      "+ Failure to thrive -> Failure to thrive",
+      "+ Vomiting -> Vomiting",
+      "- Seizure -> Seizure",
+      "- Hypertonia -> Hypertonia",
+      "- Cataract -> Cataract",
+      "- Hypermetropia -> Hypermetropia",
+      "- Optic disc pallor -> Optic disc pallor",
+      "- Leukocoria -> Leukocoria",
+      "- Microphthalmia -> Microphthalmia",
+      "- Nystagmus -> Nystagmus",
+      "- Esotropia -> Esotropia",
+      "- Reduced visual acuity -> Reduced visual acuity"
+    ]
+  },
+  {
+    "case_id": "PMID_39414788_IV_4",
+    "note": "I am referring this 15-year-old boy for assessment of a skeletal and joint presentation. Imaging has shown flattened vertebral bodies, and he has scoliosis with a waddling gait. Joint movement is restricted, and he experiences joint pain and swelling. His anterior soft spot remains open. He does not have joint stiffness, kyphosis, knock-knees or bowlegs, and his stature is not short.",
+    "original": [
+      "Platyspondyly",
+      "Limitation of joint mobility",
+      "Joint swelling",
+      "Waddling gait",
+      "Scoliosis",
+      "Arthralgia",
+      "Persistent open anterior fontanelle"
+    ],
+    "extracted": [
+      "+ Platyspondyly -> Platyspondyly",
+      "+ Scoliosis -> Scoliosis",
+      "+ Waddling gait -> Waddling gait",
+      "+ Limited joint mobility -> Limitation of joint mobility",
+      "+ Arthralgia -> Arthralgia",
+      "+ Joint swelling -> Joint swelling",
+      "+ Persistent open anterior fontanelle -> Persistent open anterior fontanelle",
+      "- Joint stiffness -> Joint stiffness",
+      "- Kyphosis -> Kyphosis",
+      "- Genu valgum -> Genu valgum",
+      "- Genu varum -> Genu varum",
+      "- Short stature -> Short stature"
+    ]
+  },
+  {
+    "case_id": "PMID_30315159_Patient_N",
+    "note": "Dear Colleague, I am referring this 12-year-old girl for assessment of thrombocytopenia and mild global developmental delay. She has a reduced platelet count, and her developmental progress has been mildly delayed across multiple areas. On examination and history, there is no posterior rotation of the ears, hearing impairment, or seizure history. She has no umbilical hernia or patent ductus arteriosus, and her toes do not overlap. There is no increased stiffness in the lower limbs and no retrusion of the midface. I would be grateful for your clinical genetic assessment.",
+    "original": [
+      "Thrombocytopenia",
+      "Mild global developmental delay"
+    ],
+    "extracted": [
+      "+ Thrombocytopenia -> Thrombocytopenia",
+      "+ Global developmental delay -> Global developmental delay",
+      "- Posteriorly rotated ears -> Posteriorly rotated ears",
+      "- Hearing impairment -> Hearing impairment",
+      "- Seizures -> Seizure",
+      "- Umbilical hernia -> Umbilical hernia",
+      "- Patent ductus arteriosus -> Patent ductus arteriosus",
+      "- Overlapping toes -> Overlapping toe",
+      "- Hypertonia -> Hypertonia",
+      "- Midface retrusion -> Midface retrusion"
+    ]
+  }
+]

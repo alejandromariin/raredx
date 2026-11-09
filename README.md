@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction is implemented and being evaluated; the web UI is next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation adds Gemini 3.5 Flash-Lite to the ensemble.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction works (see results); the web UI is next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation adds Gemini 3.5 Flash-Lite to the ensemble.
 
 ## How it works
 
@@ -58,6 +58,20 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 - **Learning curve:** 250 / 500 / 1,000 training cases give 21 / 21.5 / 23.5 % top 1, nearly flat, so the training sample stays at 1,000 cases.
 - **Ceiling:** the correct disease is among the candidates in 41.5 % of validation cases; adding more LLMs should raise this.
 - **Cost and time per patient** (`results/cost_time.json`, 10 patients with real calls): about **10.5 s**, almost all of it waiting for the LLM (ranker 0.003 s, fusion 0.02 s), and **0.0005 $** with GPT-6 Luna. With several LLMs queried in parallel, time is that of the slowest one.
+
+### Symptom extraction (round trip, 100 validation cases)
+
+`results/extraction_val.json`, examples in `results/extraction_examples_val.json`.
+
+| | Value |
+|---|---|
+| Original symptoms recovered exactly | 82.7 % (precision 82.4 %) |
+| ... exactly or as a parent / child term | 92.2 % |
+| Absent symptoms recovered | 87.7 % |
+| Ranker top 10 with the original codes | 28 % |
+| Ranker top 10 with the codes extracted from the note | 27 % |
+
+Going through a free-text note costs almost nothing in diagnostic accuracy (top 1: 16 % -> 14 %, top 10: 28 % -> 27 %, within the confidence intervals). About 0.0002 $ per note with GPT-6 Luna.
 
 ## Quickstart
 
