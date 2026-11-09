@@ -216,21 +216,74 @@ def _subset(ds: dict, case_idx: list[int]) -> dict:
             "candidates": [ds["candidates"][i] for i in case_idx], "gold": [ds["gold"][i] for i in case_idx]}
 
 
-def eval_fusion(models: list[str] | None = None) -> dict:
-    """Train the fusion on the train sample, evaluate on validation, against the references."""
-    import numpy as np
+def _fusion_tables(models: list[str]):
+    """Build the candidate tables of the train and validation samples (see fusion.py)."""
     from .ensemble import Ensemble
-    from .fusion import FeatureBuilder, LightGBMFusion, LogRegFusion, NOT_LISTED, ranks_from_scores, rrf_scores
+    from .fusion import FeatureBuilder
     from .ranker import OntologyRanker
-
     cfg = load_settings()["fusion"]
-    models = models or cfg["models"]
     ranker = OntologyRanker()
     fb = FeatureBuilder(ranker, Ensemble(onto=ranker.onto), models, cfg["ranker_top"])
     print("building tables (train)...", flush=True)
     train = fb.dataset(sample_cases_of("train"))
     print("building tables (val)...", flush=True)
     val = fb.dataset(sample_cases_of("val"))
+    return fb, train, val
+
+
+# =============================================================================
+# ABLATIONS (RE9): remove one group of columns at a time, retrain the fusion and
+# measure on validation. A big drop means that group matters.
+# Note: removing the "ranker" columns keeps the ranker's 50 candidates in the table;
+# it measures what its SCORES add to the ordering, not the candidates it proposes.
+# =============================================================================
+
+COLUMN_GROUPS = {
+    "ranker": lambda c: c.startswith("ranker_"),
+    "llm": lambda c: ":" in c or c.startswith("llm_"),
+    "prevalence": lambda c: c.startswith("prevalence_"),
+    "disease_info": lambda c: c.startswith("disease_"),
+    "patient_info": lambda c: c.startswith("case_"),
+}
+
+
+def eval_ablation(models: list[str] | None = None) -> dict:
+    from .fusion import LightGBMFusion, LogRegFusion, ranks_from_scores
+    try:
+        import lightgbm  # noqa: F401
+        Learner = LightGBMFusion
+    except ImportError:
+        print("lightgbm not installed: using logistic regression")
+        Learner = LogRegFusion
+
+    models = models or load_settings()["fusion"]["models"]
+    fb, train, val = _fusion_tables(models)
+    cols = fb.columns
+
+    def run(keep: list[int]) -> dict:
+        tr, va = {**train, "X": train["X"][:, keep]}, {**val, "X": val["X"][:, keep]}
+        m = metrics(ranks_from_scores(va, Learner().fit(tr).score(va)))
+        return {k: m[k]["value"] for k in ("top1", "top5", "top10", "mrr")}
+
+    result = {"model": Learner.name, "models_used": models, "all_columns": run(list(range(len(cols)))), "without": {}}
+    for group, is_member in COLUMN_GROUPS.items():
+        removed = [c for c in cols if is_member(c)]
+        keep = [i for i, c in enumerate(cols) if not is_member(c)]
+        result["without"][group] = {"removed_columns": removed, **run(keep)}
+        print(f"  without {group}: top1 {result['without'][group]['top1']}", flush=True)
+
+    (RESULTS / "ablation_val.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def eval_fusion(models: list[str] | None = None) -> dict:
+    """Train the fusion on the train sample, evaluate on validation, against the references."""
+    import numpy as np
+    from .fusion import LightGBMFusion, LogRegFusion, NOT_LISTED, ranks_from_scores, rrf_scores
+
+    cfg = load_settings()["fusion"]
+    models = models or cfg["models"]
+    fb, train, val = _fusion_tables(models)
     cols = fb.columns
 
     covered = sum(g in names for g, names in zip(val["gold"], val["candidates"]))
@@ -280,7 +333,7 @@ def eval_fusion(models: list[str] | None = None) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`: only the first N cases")
@@ -293,6 +346,8 @@ def main() -> None:
         print(json.dumps(eval_llm(args.model, args.split, args.limit), indent=2))
     elif args.command == "fusion":
         print(json.dumps(eval_fusion(), indent=2))
+    elif args.command == "ablation":
+        print(json.dumps(eval_ablation(), indent=2))
 
 
 if __name__ == "__main__":

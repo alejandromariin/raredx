@@ -1,0 +1,69 @@
+{
+  "model": "lightgbm_lambdarank",
+  "models_used": [
+    "openai/gpt-6-luna"
+  ],
+  "all_columns": {
+    "top1": 0.235,
+    "top5": 0.315,
+    "top10": 0.335,
+    "mrr": 0.273
+  },
+  "without": {
+    "ranker": {
+      "removed_columns": [
+        "ranker_pos_log",
+        "ranker_score",
+        "ranker_gap",
+        "ranker_rel"
+      ],
+      "top1": 0.145,
+      "top5": 0.235,
+      "top10": 0.27,
+      "mrr": 0.183
+    },
+    "llm": {
+      "removed_columns": [
+        "openai/gpt-6-luna:pos",
+        "openai/gpt-6-luna:listed",
+        "openai/gpt-6-luna:family",
+        "llm_votes",
+        "llm_best_pos"
+      ],
+      "top1": 0.19,
+      "top5": 0.275,
+      "top10": 0.3,
+      "mrr": 0.227
+    },
+    "prevalence": {
+      "removed_columns": [
+        "prevalence_log10",
+        "prevalence_known"
+      ],
+      "top1": 0.235,
+      "top5": 0.315,
+      "top10": 0.335,
+      "mrr": 0.271
+    },
+    "disease_info": {
+      "removed_columns": [
+        "disease_annotations_log"
+      ],
+      "top1": 0.22,
+      "top5": 0.31,
+      "top10": 0.34,
+      "mrr": 0.265
+    },
+    "patient_info": {
+      "removed_columns": [
+        "case_n_present",
+        "case_mean_ic",
+        "case_n_excluded"
+      ],
+      "top1": 0.235,
+      "top5": 0.31,
+      "top10": 0.34,
+      "mrr": 0.27
+    }
+  }
+}
