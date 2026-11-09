@@ -1,0 +1,20 @@
+{
+  "patients_timed": 10,
+  "models": [
+    "openai/gpt-6-luna"
+  ],
+  "seconds_per_patient": {
+    "step:ranker": 0.003,
+    "step:fusion": 0.018,
+    "step:openai/gpt-6-luna": 10.458,
+    "total_llms_in_series": 10.48,
+    "total_llms_in_parallel": 10.48
+  },
+  "usd_per_patient": {
+    "openai/gpt-6-luna": {
+      "mean": 0.000493,
+      "calls_measured": 1200
+    }
+  },
+  "usd_per_patient_total": 0.000493
+}

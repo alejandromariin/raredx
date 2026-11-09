@@ -276,6 +276,65 @@ def eval_ablation(models: list[str] | None = None) -> dict:
     return result
 
 
+# =============================================================================
+# COST AND TIME PER PATIENT (RE7)
+# Diagnoses a few validation patients WITHOUT the cache (real LLM calls) and times
+# each step: ranker, each LLM, fusion. LLMs can be asked in parallel, so we report
+# the time in series (sum of LLMs) and in parallel (slowest LLM).
+# It also reports the average cost per patient of every LLM over all calls so far.
+# =============================================================================
+
+def eval_timing(n: int = 10) -> dict:
+    import sqlite3
+    import time
+    import numpy as np
+    from .llm import CACHE_DB
+
+    models = load_settings()["fusion"]["models"]
+    fb, train, _ = _fusion_tables(models)
+    try:
+        from .fusion import LightGBMFusion as Learner
+        import lightgbm  # noqa: F401
+    except ImportError:
+        from .fusion import LogRegFusion as Learner
+    fusion = Learner().fit(train)
+
+    cases = random.Random(7).sample(sample_cases_of("val"), n)
+    steps = {"ranker": [], "fusion": [], **{m: [] for m in models}}
+    for i, c in enumerate(cases, 1):
+        t = time.perf_counter()
+        fb.ranker.score(c["hpo_present"], c["hpo_excluded"])
+        steps["ranker"].append(time.perf_counter() - t)
+        for m in models:
+            steps[m].append(fb.ensemble.diagnose(c, m, use_cache=False)["seconds"])
+        t = time.perf_counter()
+        names, table = fb.case_table(c)          # answers are cached now: this times building + scoring
+        fusion.score({"X": table})
+        steps["fusion"].append(time.perf_counter() - t)
+        print(f"  {i}/{n}", flush=True)
+
+    mean = {k: round(float(np.mean(v)), 3) for k, v in steps.items()}
+    llm_series = sum(mean[m] for m in models)
+    llm_parallel = max((mean[m] for m in models), default=0.0)
+
+    cost = {m: (0.0, 0) for m in models}
+    if CACHE_DB.exists():   # average cost of every real call recorded so far, per model
+        db = sqlite3.connect(CACHE_DB)
+        cost = {m: db.execute("SELECT AVG(usd), COUNT(*) FROM spend WHERE model = ?", (m,)).fetchone() for m in models}
+    result = {
+        "patients_timed": n, "models": models,
+        "seconds_per_patient": {
+            **{f"step:{k}": v for k, v in mean.items()},
+            "total_llms_in_series": round(mean["ranker"] + llm_series + mean["fusion"], 2),
+            "total_llms_in_parallel": round(mean["ranker"] + llm_parallel + mean["fusion"], 2),
+        },
+        "usd_per_patient": {m: {"mean": round(c[0] or 0, 6), "calls_measured": c[1]} for m, c in cost.items()},
+        "usd_per_patient_total": round(sum(c[0] or 0 for c in cost.values()), 6),
+    }
+    (RESULTS / "cost_time.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
 def eval_fusion(models: list[str] | None = None) -> dict:
     """Train the fusion on the train sample, evaluate on validation, against the references."""
     import numpy as np
@@ -333,7 +392,7 @@ def eval_fusion(models: list[str] | None = None) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`: only the first N cases")
@@ -348,6 +407,8 @@ def main() -> None:
         print(json.dumps(eval_fusion(), indent=2))
     elif args.command == "ablation":
         print(json.dumps(eval_ablation(), indent=2))
+    elif args.command == "timing":
+        print(json.dumps(eval_timing(args.limit or 10), indent=2))
 
 
 if __name__ == "__main__":

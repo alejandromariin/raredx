@@ -82,15 +82,16 @@ class Ensemble:
         self.onto = onto or Ontology()
         self.names = names or DiseaseNames()
 
-    def diagnose(self, case: dict, model: str, k: int = 10) -> dict:
+    def diagnose(self, case: dict, model: str, k: int = 10, use_cache: bool = True) -> dict:
         """One model's differential for one patient:
         {"model", "candidates": [{"rank", "name", "omim", "codes", "how"}], "usd", "cached", "raw"}"""
-        reply = self.client.ask(model, build_prompt(case, self.onto, k))
+        reply = self.client.ask(model, build_prompt(case, self.onto, k), use_cache=use_cache)
         candidates = []
         for rank, item in enumerate(parse_answer(reply["text"])[:k], start=1):
             codes, how = self.names.lookup(item["name"], item["omim"])
             candidates.append({"rank": rank, **item, "codes": sorted(codes), "how": how})
-        return {"model": model, "candidates": candidates, "usd": reply["usd"], "cached": reply["cached"], "raw": reply["text"]}
+        return {"model": model, "candidates": candidates, "usd": reply["usd"], "cached": reply["cached"],
+                "seconds": reply.get("seconds", 0.0), "raw": reply["text"]}
 
     @staticmethod
     def rank_of(disease: str, result: dict) -> int | None:

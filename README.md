@@ -8,27 +8,88 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; the web UI and free-text symptom extraction are next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation will use the full four-model ensemble.
 
 ## How it works
 
-_TBD_
+```
+Patient symptoms (HPO terms)
+   |-- Ontology ranker   (raredx/ranker.py)    ranks all 8,465 OMIM diseases by symptom similarity
+   |-- LLM ensemble      (raredx/ensemble.py)  each LLM proposes its 10 most likely diagnoses
+   v
+Learned fusion (raredx/fusion.py)              LightGBM re-ranks the candidates of both sources
+   v
+Ranked differential diagnosis
+```
 
-## Results
+- **Ontology ranker.** Compares the patient's symptoms with each disease's symptoms in the Human Phenotype Ontology annotations. Rare symptoms count more than common ones (information content), and related symptoms count partially through the HPO hierarchy. No LLM involved.
+- **LLM ensemble.** Each LLM receives the symptoms by readable name, plus age and sex, and returns its top 10 as JSON. Disease names are translated to OMIM codes using OMIM names, Orphanet synonyms and gene symbols (raredx/diseases.py); OMIM numbers proposed by the LLM are verified, not trusted.
+- **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence...). A LightGBM ranking model (lambdarank) trained on 1,000 published cases learns how much to trust each source.
+- **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (raredx/llm.py), with an exact response cache and a hard spending limit.
 
-_TBD: evaluation on phenopacket-store with leakage- and contamination-aware splits._
+## Evaluation
+
+Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenopacket-store) (10,374 published patients, 780 diseases, confirmed diagnoses). The evaluation is designed so the system cannot benefit from information it would not have in practice:
+
+- **Split by paper.** Train / validation / test are split by source publication, never by patient (70 / 10 / 20 %). Samples of 1,000 / 200 / 500 cases, at most 5 per paper; the exact case lists are versioned in `results/samples/`.
+- **Leakage guard.** When a case is evaluated, the ranker ignores every HPO annotation derived from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 %), artificially.
+- **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model (gpt-oss-120b, cutoff July 2024; 1,337 later cases).
+- **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
+
+### Preliminary results (validation, 200 cases, GPT-6 Luna as the only LLM)
+
+| Method | Top 1 | Top 5 | Top 10 | MRR |
+|---|---|---|---|---|
+| Ontology ranker alone | 14.0 % | 24.0 % | 24.0 % | 0.18 |
+| GPT-6 Luna alone | 14.5 % | 24.5 % | 27.0 % | 0.19 |
+| Reciprocal rank fusion (no learning) | 12.5 % | 18.5 % | 32.0 % | 0.18 |
+| Learned fusion, logistic regression | 16.0 % | 24.0 % | 28.0 % | 0.21 |
+| **Learned fusion, LightGBM** | **23.5 %** | **31.5 %** | **33.5 %** | **0.27** |
+
+- **Ablations** (`results/ablation_val.json`): removing the ranker's columns drops top 1 from 23.5 % to 14.5 %; removing the LLM's drops it to 19 %. Prevalence and patient-level columns add nothing so far.
+- **Learning curve:** 250 / 500 / 1,000 training cases give 21 / 21.5 / 23.5 % top 1, nearly flat, so the training sample stays at 1,000 cases.
+- **Ceiling:** the correct disease is among the candidates in 41.5 % of validation cases; adding more LLMs should raise this.
+- **Cost and time per patient** (`results/cost_time.json`, 10 patients with real calls): about **10.5 s**, almost all of it waiting for the LLM (ranker 0.003 s, fusion 0.02 s), and **0.0005 $** with GPT-6 Luna. With several LLMs queried in parallel, time is that of the slowest one.
 
 ## Quickstart
 
-_TBD_
+Requirements: Python 3.10+, Docker (for Bifrost), an OpenAI API key.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+cp .env.example .env            # then add your API keys
+make data                       # download datasets, build the case table, fetch publication dates
+make split                      # train / validation / test samples
+make gateway                    # start Bifrost on http://localhost:8080
+python3 -m raredx.llm ping      # check the gateway and the API key
+```
+
+Evaluation commands (results are written to `results/`):
+
+```bash
+python3 -m raredx.evaluate ranker --split val                          # ranker alone
+python3 -m raredx.evaluate llm --model openai/gpt-6-luna --split val   # one LLM alone
+python3 -m raredx.evaluate fusion                                      # train + evaluate the fusion
+python3 -m raredx.evaluate ablation                                    # remove one group of columns at a time
+python3 -m raredx.evaluate timing                                      # cost and time per patient
+```
 
 ## Repository layout
 
 ```
-raredx/        all the code, one file per pipeline step (data.py, ranker.py, fusion.py, ...)
-data/          downloaded and processed data (not in git; created by `make data`)
-results/       evaluation results (versioned)
-settings.yaml  paths, budget and model choices
+raredx/
+  data.py       download datasets, build the case table, fetch PubMed dates
+  diseases.py   disease names <-> OMIM codes (OMIM, Orphanet, gene symbols)
+  ranker.py     ontology ranker
+  llm.py        Bifrost client: exact cache and spending limit
+  ensemble.py   LLM prompts, answer parsing
+  fusion.py     candidate tables and fusion models
+  evaluate.py   splits, metrics and every evaluation command
+results/        versioned evaluation results and case samples
+bifrost/        Bifrost gateway configuration
+settings.yaml   data versions, budget, models, evaluation parameters
+data/           downloaded and processed data (not in git; created by `make data`)
 ```
 
 ## Use of AI tools
