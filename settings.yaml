@@ -12,14 +12,17 @@ llm:
   reasoning_effort: low    # hidden "thinking" tokens are billed: keep it low
   # During development only OpenAI is used (already paid). The other providers are
   # switched on for the final evaluation; models of inactive providers are skipped.
-  active_providers: [openai]
-  # Differential-diagnosis ensemble: one model per provider.
+  active_providers: [openai, gemini, groq]
+  # Free tiers: max requests per minute per provider (the client waits between calls)
+  requests_per_minute: {gemini: 10, groq: 6}
+  # Differential-diagnosis ensemble. Budget decision (8.83 $ left on OpenAI, no new deposits):
+  # one paid model + one free tier from another family. GPT-6.1 Sol and Claude Sonnet were dropped.
   # cutoff = training data cutoff, used for the contamination guard (null = not confirmed yet)
   ensemble:
-    - {provider: openai,    model: gpt-6.1-sol,         cutoff: 2026-04-30}
-    - {provider: gemini,    model: gemini-3.8-flash,    cutoff: null}
-    - {provider: anthropic, model: claude-sonnet-5-5,   cutoff: 2026-06-30}
-    - {provider: groq,      model: openai/gpt-oss-120b, cutoff: 2024-07-31}  # stated Jun/Jul 2024; latest used
+    - {provider: openai, model: gpt-6-luna,            cutoff: 2026-05-18}
+    - {provider: gemini, model: gemini-3.5-flash-lite, cutoff: null}       # Google AI Studio free tier
+  # Contamination check only (not in the ensemble): open model with an old cutoff, Groq free tier
+  contamination_model: {provider: groq, model: openai/gpt-oss-120b, cutoff: 2024-07-31}
   # Cheap model for symptom extraction and explanations
   utility: {provider: openai, model: gpt-6-luna, cutoff: 2026-05-18}
   # Two candidates, chosen by the HPO-synonym test
@@ -30,7 +33,10 @@ llm:
     gpt-6-luna: [0.10, 0.50]
     gemini-3.8-flash: [0.75, 3.75]
     claude-sonnet-5-5: [2.00, 10.00]
-    openai/gpt-oss-120b: [0.15, 0.60]
+    openai/gpt-oss-120b: [0.00, 0.00]        # Groq free tier
+    gemini-3.5-flash-lite: [0.00, 0.00]      # Google AI Studio free tier
+    gemini-3.1-flash-lite: [0.00, 0.00]
+    gemini-2.5-flash-lite: [0.00, 0.00]
     text-embedding-3-small: [0.02, 0.00]
 eval:
   seed: 42

@@ -35,6 +35,10 @@ class BudgetExceeded(RuntimeError):
     pass
 
 
+class RateLimited(RuntimeError):
+    """The provider keeps refusing because of its rate limit (often the free daily quota)."""
+
+
 def _load_env() -> None:
     env = ROOT / ".env"
     if env.exists():
@@ -55,6 +59,9 @@ class LLMClient:
         self.active = set(cfg["llm"]["active_providers"])
         self.reasoning_effort = cfg["llm"].get("reasoning_effort")
         self.url = os.environ.get("BIFROST_URL", "http://localhost:8080").rstrip("/")
+        # Free tiers limit requests per minute: wait between calls to the same provider
+        self.min_interval = {p: 60.0 / rpm for p, rpm in cfg["llm"].get("requests_per_minute", {}).items()}
+        self._last_call: dict[str, float] = {}
 
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(db_path)
@@ -103,6 +110,10 @@ class LLMClient:
             raise BudgetExceeded(f"Spent {self.spent():.2f} $ of {self.budget:.2f} $; refusing new calls")
 
         # 1. CALL through Bifrost (retries on rate limits and server errors)
+        wait = self._last_call.get(provider, 0.0) + self.min_interval.get(provider, 0.0) - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call[provider] = time.monotonic()
         started = time.perf_counter()
         data = self._post("/v1/chat/completions", body)
         seconds = time.perf_counter() - started
@@ -129,7 +140,12 @@ class LLMClient:
                     return json.load(resp)
             except urllib.error.HTTPError as err:
                 detail = err.read().decode(errors="replace")[:500]
-                if err.code in (429, 500, 502, 503, 504) and i < attempts - 1:
+                if err.code == 429:
+                    if i < attempts - 1:
+                        time.sleep(15 * 2 ** i)  # rate limit: 15 s, 30 s, 60 s
+                        continue
+                    raise RateLimited(f"{body.get('model')}: rate limit or daily quota reached. {detail}") from None
+                if err.code in (500, 502, 503, 504) and i < attempts - 1:
                     time.sleep(2 ** i)  # 1 s, 2 s, 4 s
                     continue
                 raise RuntimeError(f"Bifrost returned {err.code}: {detail}") from None
@@ -141,11 +157,12 @@ class LLMClient:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["ping", "spend"])
+    parser.add_argument("--model", default="openai/gpt-6-luna", help="provider/model to ping")
     args = parser.parse_args()
     client = LLMClient()
     if args.command == "ping":
         for attempt in ("first call", "same call again"):
-            r = client.ask("openai/gpt-6-luna", [{"role": "user", "content": "Reply only: OK"}])
+            r = client.ask(args.model, [{"role": "user", "content": "Reply only: OK"}])
             print(f"{attempt}: {r['text']!r} | cached={r['cached']} | cost={r['usd']:.6f} $")
     print(f"total spent: {client.spent():.4f} $ of {client.budget:.2f} $")
 

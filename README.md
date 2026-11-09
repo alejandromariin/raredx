@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; the web UI and free-text symptom extraction are next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation will use the full four-model ensemble.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; the web UI and free-text symptom extraction are next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation adds Gemini 3.5 Flash-Lite to the ensemble.
 
 ## How it works
 
@@ -25,7 +25,9 @@ Ranked differential diagnosis
 - **Ontology ranker.** Compares the patient's symptoms with each disease's symptoms in the Human Phenotype Ontology annotations. Rare symptoms count more than common ones (information content), and related symptoms count partially through the HPO hierarchy. No LLM involved.
 - **LLM ensemble.** Each LLM receives the symptoms by readable name, plus age and sex, and returns its top 10 as JSON. Disease names are translated to OMIM codes using OMIM names, Orphanet synonyms and gene symbols (raredx/diseases.py); OMIM numbers proposed by the LLM are verified, not trusted.
 - **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence...). A LightGBM ranking model (lambdarank) trained on 1,000 published cases learns how much to trust each source.
-- **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (raredx/llm.py), with an exact response cache and a hard spending limit.
+- **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (raredx/llm.py), with an exact response cache, a hard spending limit and per-provider rate limiting for free tiers.
+- **Models.** Ensemble: GPT-6 Luna (OpenAI, about 0.0005 $ per patient) and Gemini 3.5 Flash-Lite (Google AI Studio free tier). Contamination check: gpt-oss-120b (Groq free tier). Larger models were left out to keep the whole project within a small budget.
+- **Privacy note.** Free tiers may use the data sent to them to improve their models. That is fine for this evaluation, which only uses already-published cases, but real patient data would require paid plans or self-hosted models.
 
 ## Evaluation
 
@@ -53,7 +55,7 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 
 ## Quickstart
 
-Requirements: Python 3.10+, Docker (for Bifrost), an OpenAI API key.
+Requirements: Python 3.10+, Docker (for Bifrost), API keys for OpenAI, Google AI Studio (free) and Groq (free).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -62,6 +64,8 @@ cp .env.example .env            # then add your API keys
 make data                       # download datasets, build the case table, fetch publication dates
 make split                      # train / validation / test samples
 make gateway                    # start Bifrost on http://localhost:8080
+                                # after editing bifrost/config.json: docker compose restart bifrost
+                                # after adding keys to .env:      docker compose up -d --force-recreate bifrost
 python3 -m raredx.llm ping      # check the gateway and the API key
 ```
 

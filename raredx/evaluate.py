@@ -109,7 +109,8 @@ def make_splits() -> dict:
 
     # Summary
     train_diseases = {c["disease_id"] for c in by_split["train"]}
-    cutoffs = {m["model"]: str(m["cutoff"]) for m in cfg["llm"]["ensemble"] if m.get("cutoff")}
+    llms = cfg["llm"]["ensemble"] + [cfg["llm"]["contamination_model"]]
+    cutoffs = {m["model"]: str(m["cutoff"]) for m in llms if m.get("cutoff")}
     summary = {}
     for s in SPLITS:
         all_c = by_split[s]
@@ -188,8 +189,15 @@ def eval_llm(model: str, split: str, limit: int | None = None) -> dict:
     if limit:   # quick runs: a random, spread-out subset (the sample list is sorted by paper)
         cases = random.Random(42).sample(cases, min(limit, len(cases)))
     ranks, how, usd, cached = [], Counter(), 0.0, 0
+    from .llm import RateLimited
     for i, c in enumerate(cases, 1):
-        r = ens.diagnose(c, model)
+        try:
+            r = ens.diagnose(c, model)
+        except RateLimited as err:
+            print(f"\nStopped at case {i}/{len(cases)}: {err}\n"
+                  "The cases already done are cached. Run the same command again later "
+                  "(free daily quotas reset at midnight Pacific time) and it will continue.")
+            raise SystemExit(1)
         ranks.append(Ensemble.rank_of(c["disease_id"], r))
         how.update(x["how"] for x in r["candidates"])
         usd += r["usd"]; cached += r["cached"]

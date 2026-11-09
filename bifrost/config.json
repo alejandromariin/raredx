@@ -18,6 +18,33 @@
           "weight": 1.0
         }
       ]
+    },
+    "gemini": {
+      "keys": [
+        {
+          "name": "gemini-free",
+          "value": "env.GEMINI_API_KEY",
+          "models": [
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash-lite"
+          ],
+          "weight": 1.0
+        }
+      ]
+    },
+    "groq": {
+      "keys": [
+        {
+          "name": "groq-free",
+          "value": "env.GROQ_API_KEY",
+          "models": [
+            "openai/gpt-oss-120b",
+            "gpt-oss-120b"
+          ],
+          "weight": 1.0
+        }
+      ]
     }
   },
   "config_store": {
