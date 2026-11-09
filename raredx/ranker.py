@@ -43,11 +43,17 @@ class Ontology:
         graph = json.loads(path.read_text(encoding="utf-8"))["graphs"][0]
         self.names: dict[str, str] = {}
         self.alt_ids: dict[str, str] = {}
+        self.synonyms: dict[str, list[str]] = {}    # exact synonyms, e.g. Hypertelorism -> "Wide-set eyes"
+        self.obsolete: set[str] = set()
         for node in graph["nodes"]:
             if "HP_" not in node["id"]:
                 continue
             term = _hp_id(node["id"])
             self.names[term] = node.get("lbl", "")
+            meta = node.get("meta", {})
+            if meta.get("deprecated"):
+                self.obsolete.add(term)
+            self.synonyms[term] = [x["val"] for x in meta.get("synonyms", []) if x.get("pred") == "hasExactSynonym"]
             for item in node.get("meta", {}).get("basicPropertyValues", []):
                 if item.get("pred", "").endswith("hasAlternativeId"):
                     self.alt_ids[item["val"]] = term

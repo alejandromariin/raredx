@@ -496,10 +496,79 @@ def eval_contamination(limit: int | None = None) -> dict:
     (RESULTS / "contamination.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
+# =============================================================================
+# EXTRACTION (RE10): round trip. We have no real clinical notes with known HPO codes,
+# so we make them: an LLM writes a note from a published case, and the extractor
+# turns it back into codes. Example:
+#   case:      Seizure, Hypertelorism, Arachnodactyly; absent: Hearing impairment
+#   note:      "...recurrent fits since age two, widely spaced eyes, very long, thin fingers..."
+#   extracted: Seizure, Hypertelorism, Arachnodactyly  -> 3 of 3 recovered
+# What matters most is the last check: does the ranker still find the disease when it
+# uses the extracted codes instead of the original ones?
+# Caveat: the same LLM family writes and reads the notes, so real notes may be harder.
+# =============================================================================
+
+def eval_extraction(split: str = "val", limit: int = 100) -> dict:
+    from .phenotype import PhenotypeExtractor
+    from .ranker import OntologyRanker
+    ranker = OntologyRanker()
+    onto = ranker.onto
+    ext = PhenotypeExtractor(onto=onto)
+    pool = sample_cases_of(split)
+    cases = random.Random(42).sample(pool, min(limit, len(pool)))
+
+    def near(a: str, b: str, steps: int = 2) -> bool:
+        """a and b are the same term, or one is a parent / grandparent of the other."""
+        def up(t):
+            level, seen = {t}, {t}
+            for _ in range(steps):
+                level = {p for x in level for p in onto._parents.get(x, ())}
+                seen |= level
+            return seen
+        return a == b or a in up(b) or b in up(a)
+
+    tp = fp = fn = close = ex_tp = ex_n = unmatched = n_feat = 0
+    ranks_gold, ranks_ext, usd, secs, examples = [], [], 0.0, [], []
+    for i, c in enumerate(cases, 1):
+        note, absent = ext.narrate(c)
+        out = ext.extract(note)
+        gold = {onto.canonical(t) for t in c["hpo_present"]}
+        got = {onto.canonical(t) for t in out["hpo_present"]}
+        tp += len(gold & got); fp += len(got - gold); fn += len(gold - got)
+        close += sum(any(near(g, e) for e in got) for g in gold)
+        ex_gold = {onto.canonical(t) for t in absent}
+        ex_tp += len(ex_gold & {onto.canonical(t) for t in out["hpo_excluded"]}); ex_n += len(ex_gold)
+        unmatched += sum(f["how"] == "unmatched" for f in out["features"]); n_feat += len(out["features"])
+        ranks_gold.append(ranker.rank_of(c["disease_id"], c["hpo_present"], absent, exclude_ref=c["pmid"]))
+        ranks_ext.append(ranker.rank_of(c["disease_id"], out["hpo_present"], out["hpo_excluded"], exclude_ref=c["pmid"]))
+        usd += out["usd"]; secs.append(out["seconds"])
+        if len(examples) < 3:
+            name = lambda t: onto.names.get(t, t)
+            examples.append({"case_id": c["case_id"], "note": note,
+                             "original": [name(t) for t in sorted(gold)],
+                             "extracted": [f"{'+' if f['present'] else '-'} {f['term']} -> {f['hpo_name']}" for f in out["features"]]})
+        print(f"  {i}/{len(cases)} recovered {len(gold & got)}/{len(gold)} | rank original={ranks_gold[-1]} extracted={ranks_ext[-1]}", flush=True)
+
+    result = {
+        "split": split, "cases": len(cases),
+        "present_exact": {"precision": round(tp / max(tp + fp, 1), 3), "recall": round(tp / max(tp + fn, 1), 3)},
+        # original symptom recovered exactly or as a parent / child / grandparent term
+        "present_recall_close": round(close / max(tp + fn, 1), 3),
+        "absent_recall_exact": round(ex_tp / max(ex_n, 1), 3),
+        "features_unmatched": f"{unmatched}/{n_feat}",
+        "ranker_with_original_codes": metrics(ranks_gold),
+        "ranker_with_extracted_codes": metrics(ranks_ext),
+        "seconds_per_note": round(float(sum(secs) / max(len(secs), 1)), 2),
+        "usd_this_run": round(usd, 4),
+    }
+    (RESULTS / f"extraction_{split}.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    (RESULTS / f"extraction_examples_{split}.json").write_text(json.dumps(examples, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return result
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`/`contamination`: a random subset of N cases/pairs")
@@ -518,6 +587,8 @@ def main() -> None:
         print(json.dumps(eval_timing(args.limit or 10), indent=2))
     elif args.command == "contamination":
         print(json.dumps(eval_contamination(args.limit), indent=2))
+    elif args.command == "extraction":
+        print(json.dumps(eval_extraction(args.split, args.limit or 100), indent=2))
 
 
 if __name__ == "__main__":

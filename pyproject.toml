@@ -27,7 +27,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-embeddings = ["sentence-transformers"]
 dev = ["pytest", "ruff", "jupyter"]
 
 [tool.setuptools.packages.find]

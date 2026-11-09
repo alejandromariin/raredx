@@ -12,6 +12,9 @@ Cache and spend live in .cache/llm.sqlite (not committed).
 Command line:
   python -m raredx.llm ping     # one tiny test call through Bifrost
   python -m raredx.llm spend    # how much we have spent so far
+
+Embeddings (turning a text into a list of numbers, so similar meanings get similar
+numbers) also go through here: embed("openai/text-embedding-3-small", ["short stature"]).
 """
 from __future__ import annotations
 
@@ -129,6 +132,52 @@ class LLMClient:
         self.db.execute("INSERT OR REPLACE INTO cache VALUES (?, ?)", (key, json.dumps(result)))
         self.db.commit()
         return {**result, "usd": usd, "seconds": seconds, "cached": False}
+
+    def embed(self, model: str, texts: list[str], dimensions: int | None = None,
+              use_cache: bool = True, batch: int = 512):
+        """Embeddings of `texts` as a float32 matrix (one row per text, rows of length 1).
+        Example: embed(m, ["short stature", "small height"]) -> 2 rows that point in
+        almost the same direction, so their dot product (similarity) is close to 1.
+        use_cache=False for big one-off jobs (the HPO index is saved to its own file)."""
+        import base64
+        import numpy as np
+        provider = model.split("/", 1)[0]
+        if provider not in self.active:
+            raise RuntimeError(f"Provider '{provider}' is not active (settings.yaml: llm.active_providers)")
+        key_of = lambda t: "emb:" + hashlib.sha256(f"{model}|{dimensions}|{t}".encode()).hexdigest()
+        out: dict[int, np.ndarray] = {}
+        todo = []
+        for i, t in enumerate(texts):
+            row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key_of(t),)).fetchone() if use_cache else None
+            if row:
+                out[i] = np.frombuffer(base64.b64decode(row[0]), dtype=np.float32)
+            else:
+                todo.append(i)
+        for start in range(0, len(todo), batch):
+            if self.spent() >= self.budget:
+                raise BudgetExceeded(f"Spent {self.spent():.2f} $ of {self.budget:.2f} $; refusing new calls")
+            idx = todo[start:start + batch]
+            body = {"model": model, "input": [texts[i] for i in idx]}
+            if dimensions:
+                body["dimensions"] = dimensions
+            started = time.perf_counter()
+            data = self._post("/v1/embeddings", body)
+            seconds = time.perf_counter() - started
+            tokens = data.get("usage", {}).get("prompt_tokens", 0)
+            self.db.execute("INSERT INTO spend (ts, model, tokens_in, tokens_out, usd, seconds) VALUES (?, ?, ?, ?, ?, ?)",
+                            (time.time(), model, tokens, 0, self._cost(model, tokens, 0), seconds))
+            for item in data["data"]:
+                i = idx[item["index"]]
+                vec = np.asarray(item["embedding"], dtype=np.float32)
+                vec /= np.linalg.norm(vec) or 1.0
+                out[i] = vec
+                if use_cache:
+                    self.db.execute("INSERT OR REPLACE INTO cache VALUES (?, ?)",
+                                    (key_of(texts[i]), base64.b64encode(vec.tobytes()).decode()))
+            self.db.commit()
+            if len(todo) > batch:
+                print(f"  embedded {min(start + batch, len(todo))}/{len(todo)}", flush=True)
+        return np.vstack([out[i] for i in range(len(texts))]) if texts else np.zeros((0, 0), dtype=np.float32)
 
     def _post(self, path: str, body: dict, attempts: int = 4) -> dict:
         req = urllib.request.Request(

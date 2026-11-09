@@ -8,12 +8,16 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; the web UI and free-text symptom extraction are next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation adds Gemini 3.5 Flash-Lite to the ensemble.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction is implemented and being evaluated; the web UI is next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation adds Gemini 3.5 Flash-Lite to the ensemble.
 
 ## How it works
 
 ```
-Patient symptoms (HPO terms)
+Clinical note (free text)
+   v
+Symptom extraction    (raredx/phenotype.py)  LLM lists symptoms -> matched to HPO terms
+   v
+Patient symptoms (HPO terms), reviewed by the doctor
    |-- Ontology ranker   (raredx/ranker.py)    ranks all 8,465 OMIM diseases by symptom similarity
    |-- LLM ensemble      (raredx/ensemble.py)  each LLM proposes its 10 most likely diagnoses
    v
@@ -22,6 +26,7 @@ Learned fusion (raredx/fusion.py)              LightGBM re-ranks the candidates 
 Ranked differential diagnosis
 ```
 
+- **Symptom extraction.** An LLM reads the note and lists each symptom as a standard clinical term, marking the ones the patient explicitly does not have ("hearing is normal"). Each term is matched to the Human Phenotype Ontology (HPO): by exact name or synonym first, otherwise by meaning with OpenAI embeddings over the ~41,000 HPO names and synonyms. The five closest terms are kept so the doctor can correct the match.
 - **Ontology ranker.** Compares the patient's symptoms with each disease's symptoms in the Human Phenotype Ontology annotations. Rare symptoms count more than common ones (information content), and related symptoms count partially through the HPO hierarchy. No LLM involved.
 - **LLM ensemble.** Each LLM receives the symptoms by readable name, plus age and sex, and returns its top 10 as JSON. Disease names are translated to OMIM codes using OMIM names, Orphanet synonyms and gene symbols (raredx/diseases.py); OMIM numbers proposed by the LLM are verified, not trusted.
 - **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence...). A LightGBM ranking model (lambdarank) trained on 1,000 published cases learns how much to trust each source.
@@ -35,6 +40,7 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 
 - **Split by paper.** Train / validation / test are split by source publication, never by patient (70 / 10 / 20 %). Samples of 1,000 / 200 / 500 cases, at most 5 per paper; the exact case lists are versioned in `results/samples/`.
 - **Leakage guard.** When a case is evaluated, the ranker ignores every HPO annotation derived from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 %), artificially.
+- **Symptom extraction (round trip).** There are no public clinical notes with known HPO codes for these patients, so an LLM writes a short clinical note from each published case and the extractor turns it back into codes. We measure how many original symptoms come back and, above all, whether the ranker still finds the disease with the extracted codes (`results/extraction_val.json`). The same model family writes and reads the notes, so real notes may be harder.
 - **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases (`results/contamination.json`).
 - **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
 
@@ -78,12 +84,20 @@ python3 -m raredx.evaluate fusion                                      # train +
 python3 -m raredx.evaluate ablation                                    # remove one group of columns at a time
 python3 -m raredx.evaluate timing                                      # cost and time per patient
 python3 -m raredx.evaluate contamination                               # older vs newer cases (gpt-oss-120b)
+python3 -m raredx.evaluate extraction --limit 100                      # note -> symptoms round trip
+```
+
+Try the symptom extraction on your own text:
+
+```bash
+python3 -m raredx.phenotype "4-year-old boy with seizures since age 2, widely spaced eyes and very long fingers. Hearing is normal."
 ```
 
 ## Repository layout
 
 ```
 raredx/
+  phenotype.py  clinical note -> HPO symptoms (LLM + embeddings)
   data.py       download datasets, build the case table, fetch PubMed dates
   diseases.py   disease names <-> OMIM codes (OMIM, Orphanet, gene symbols)
   ranker.py     ontology ranker

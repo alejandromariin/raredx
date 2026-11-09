@@ -25,8 +25,9 @@ llm:
   contamination_model: {provider: groq, model: openai/gpt-oss-120b, cutoff: 2024-07-31}
   # Cheap model for symptom extraction and explanations
   utility: {provider: openai, model: gpt-6-luna, cutoff: 2026-05-18}
-  # Two candidates, chosen by the HPO-synonym test
-  embeddings: [biolord-2023, text-embedding-3-small]
+  # Embeddings to find the HPO term of each extracted symptom (BioLORD comparison dropped
+  # for time; 512 dimensions keep the HPO index small)
+  embedding: {provider: openai, model: text-embedding-3-small, dimensions: 512}
   # USD per 1M tokens [input, output], used to track spend against budget_usd
   prices:
     gpt-6.1-sol: [2.00, 10.00]
@@ -52,3 +53,8 @@ fusion:
   models: [openai/gpt-6-luna]
   ranker_top: 50               # candidates taken from the ranker per patient
   learning_curve: [250, 500, 1000]
+phenotype:
+  # Below this similarity the symptom is left unmatched for the doctor to review
+  min_score: 0.45
+  # HPO alternatives shown to the doctor for each symptom
+  alternatives: 5
