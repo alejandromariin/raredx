@@ -1,12 +1,13 @@
 {
   "model": "lightgbm_lambdarank",
   "models_used": [
-    "openai/gpt-6-luna"
+    "openai/gpt-6-luna",
+    "gemini/gemini-3.5-flash-lite"
   ],
   "all_columns": {
-    "top1": 0.235,
-    "top5": 0.315,
-    "top10": 0.335,
+    "top1": 0.23,
+    "top5": 0.325,
+    "top10": 0.35,
     "mrr": 0.273
   },
   "without": {
@@ -17,33 +18,36 @@
         "ranker_gap",
         "ranker_rel"
       ],
-      "top1": 0.145,
+      "top1": 0.155,
       "top5": 0.235,
-      "top10": 0.27,
-      "mrr": 0.183
+      "top10": 0.285,
+      "mrr": 0.194
     },
     "llm": {
       "removed_columns": [
         "openai/gpt-6-luna:pos",
         "openai/gpt-6-luna:listed",
         "openai/gpt-6-luna:family",
+        "gemini/gemini-3.5-flash-lite:pos",
+        "gemini/gemini-3.5-flash-lite:listed",
+        "gemini/gemini-3.5-flash-lite:family",
         "llm_votes",
         "llm_best_pos"
       ],
-      "top1": 0.19,
-      "top5": 0.275,
-      "top10": 0.3,
-      "mrr": 0.227
+      "top1": 0.18,
+      "top5": 0.285,
+      "top10": 0.31,
+      "mrr": 0.232
     },
     "prevalence": {
       "removed_columns": [
         "prevalence_log10",
         "prevalence_known"
       ],
-      "top1": 0.235,
+      "top1": 0.22,
       "top5": 0.315,
-      "top10": 0.335,
-      "mrr": 0.271
+      "top10": 0.35,
+      "mrr": 0.265
     },
     "disease_info": {
       "removed_columns": [
@@ -51,8 +55,8 @@
       ],
       "top1": 0.22,
       "top5": 0.31,
-      "top10": 0.34,
-      "mrr": 0.265
+      "top10": 0.365,
+      "mrr": 0.267
     },
     "patient_info": {
       "removed_columns": [
@@ -60,10 +64,10 @@
         "case_mean_ic",
         "case_n_excluded"
       ],
-      "top1": 0.235,
-      "top5": 0.31,
-      "top10": 0.34,
-      "mrr": 0.27
+      "top1": 0.225,
+      "top5": 0.315,
+      "top10": 0.35,
+      "mrr": 0.269
     }
   }
 }

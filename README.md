@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction works (see results); the web UI is next. Results below are **preliminary**: they use a single, cheap LLM (GPT-6 Luna); the final evaluation adds Gemini 3.5 Flash-Lite to the ensemble.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction works (see results); the web UI is next. Results below are on the validation sample; the final numbers on the held-out test sample are pending.
 
 ## How it works
 
@@ -44,19 +44,23 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 - **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases. Result: no sign of it (see below).
 - **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
 
-### Preliminary results (validation, 200 cases, GPT-6 Luna as the only LLM)
+### Results on validation (200 cases; the test sample is kept for the final evaluation)
 
 | Method | Top 1 | Top 5 | Top 10 | MRR |
 |---|---|---|---|---|
 | Ontology ranker alone | 14.0 % | 24.0 % | 24.0 % | 0.18 |
 | GPT-6 Luna alone | 14.5 % | 24.5 % | 27.0 % | 0.19 |
-| Reciprocal rank fusion (no learning) | 12.5 % | 18.5 % | 32.0 % | 0.18 |
-| Learned fusion, logistic regression | 16.0 % | 24.0 % | 28.0 % | 0.21 |
-| **Learned fusion, LightGBM** | **23.5 %** | **31.5 %** | **33.5 %** | **0.27** |
+| Gemini 3.5 Flash-Lite alone | 12.0 % | 23.0 % | 25.0 % | 0.17 |
+| Reciprocal rank fusion (no learning) | 11.0 % | 24.0 % | 29.0 % | 0.17 |
+| Learned fusion, logistic regression | 16.0 % | 27.0 % | 29.5 % | 0.21 |
+| **Learned fusion, LightGBM** | **23.0 %** | **32.5 %** | **35.0 %** | **0.27** |
+| *LightGBM with GPT-6 Luna as the only LLM* | *23.5 %* | *31.5 %* | *33.5 %* | *0.27* |
 
-- **Ablations** (`results/ablation_val.json`): removing the ranker's columns drops top 1 from 23.5 % to 14.5 %; removing the LLM's drops it to 19 %. Prevalence and patient-level columns add nothing so far.
-- **Learning curve:** 250 / 500 / 1,000 training cases give 21 / 21.5 / 23.5 % top 1, nearly flat, so the training sample stays at 1,000 cases.
-- **Ceiling:** the correct disease is among the candidates in 41.5 % of validation cases; adding more LLMs should raise this.
+- **The learned fusion is the main gain:** top 1 goes from 14-14.5 % for the best single source to 23 %. A fusion without learning (RRF) does not get there.
+- **The second LLM adds little:** with Gemini, top 10 goes from 33.5 % to 35 % and the correct disease is among the candidates in 43 % of cases instead of 41.5 %, but top 1 does not change. Gemini mostly proposes the same diseases as GPT-6 Luna (in validation it finds 7 that Luna misses, Luna 12 that Gemini misses).
+- **Ablations** (`results/ablation_val.json`, top 1 with everything 23 %): without the ranker's columns 15.5 %, without the LLMs' columns 18 %. Prevalence, disease-level and patient-level columns change top 1 by at most 1 point.
+- **Learning curve:** 250 / 500 / 1,000 training cases give 21 / 20 / 23 % top 1, nearly flat, so the training sample stays at 1,000 cases.
+- **Ceiling:** the correct disease is among the candidates (ranker top 50 + LLM lists) in 43 % of validation cases; the fusion can only reorder those.
 - **Cost and time per patient** (`results/cost_time.json`, 10 patients with real calls): about **10.5 s**, almost all of it waiting for the LLM (ranker 0.003 s, fusion 0.02 s), and **0.0005 $** with GPT-6 Luna. With several LLMs queried in parallel, time is that of the slowest one.
 
 ### Contamination check (gpt-oss-120b, 86 pairs of cases of the same disease)
