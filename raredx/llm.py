@@ -65,6 +65,10 @@ class RateLimited(RuntimeError):
     """The provider keeps refusing because of its rate limit (often the free daily quota)."""
 
 
+class Overloaded(RuntimeError):
+    """The provider's servers keep failing (5xx, e.g. "model experiencing high demand")."""
+
+
 def _load_env() -> None:
     env = ROOT / ".env"
     if env.exists():
@@ -222,6 +226,8 @@ class LLMClient:
                 if err.code in (500, 502, 503, 504) and i < attempts - 1:
                     time.sleep(5 * 3 ** i)  # 5 s, 15 s, 45 s: overload spikes ("high demand") last a while
                     continue
+                if err.code in (500, 502, 503, 504):
+                    raise Overloaded(f"{body.get('model')}: provider error {err.code} after retries. {detail}") from None
                 raise RuntimeError(f"Bifrost returned {err.code}: {detail}") from None
             except urllib.error.URLError as err:
                 raise RuntimeError(f"Cannot reach Bifrost at {self.url} (is it running? `make gateway`): {err.reason}") from None

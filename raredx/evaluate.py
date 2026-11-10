@@ -189,19 +189,36 @@ def eval_llm(model: str, split: str, limit: int | None = None) -> dict:
     if limit:   # quick runs: a random, spread-out subset (the sample list is sorted by paper)
         cases = random.Random(42).sample(cases, min(limit, len(cases)))
     ranks, how, usd, cached = [], Counter(), 0.0, 0
-    from .llm import RateLimited
+    from .llm import Overloaded, RateLimited
+    skipped, in_a_row = 0, 0
     for i, c in enumerate(cases, 1):
         try:
             r = ens.diagnose(c, model)
+            in_a_row = 0
         except RateLimited as err:
             print(f"\nStopped at case {i}/{len(cases)}: {err}\n"
                   "The cases already done are cached. Run the same command again later "
                   "(free daily quotas reset at midnight Pacific time) and it will continue.")
             raise SystemExit(1)
+        except Overloaded:
+            # the provider is overloaded: skip this case for now (it is not cached, so the next
+            # run retries it); stop if it keeps happening
+            skipped += 1
+            in_a_row += 1
+            print(f"  {i}/{len(cases)} skipped: provider overloaded", flush=True)
+            if in_a_row >= 3:
+                print(f"\nStopped at case {i}/{len(cases)}: the provider is overloaded. The cases already "
+                      "done are cached. Run the same command again in a while and it will continue.")
+                raise SystemExit(1)
+            continue
         ranks.append(Ensemble.rank_of(c["disease_id"], r))
         how.update(x["how"] for x in r["candidates"])
         usd += r["usd"]; cached += r["cached"]
         print(f"  {i}/{len(cases)} rank={ranks[-1]} cost so far={usd:.4f} $", flush=True)
+    if skipped:
+        print(f"\n{skipped} cases were skipped because the provider was overloaded. "
+              "Run the same command again to complete them; results are saved only when all cases are done.")
+        raise SystemExit(1)
     result = {
         "model": model, "split": split,
         "metrics": metrics(ranks),
