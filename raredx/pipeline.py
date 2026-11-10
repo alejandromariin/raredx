@@ -77,7 +77,7 @@ class Pipeline:
             if verbose:
                 print(f"  {what}: {time.perf_counter() - t:.1f} s", flush=True)
             t = time.perf_counter()
-        client = LLMClient()
+        client = LLMClient().fail_fast()        # a doctor must not wait minutes for a provider that is down
         self.ranker = OntologyRanker()
         self.onto = self.ranker.onto
         took("ontology + ranker")

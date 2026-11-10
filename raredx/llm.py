@@ -92,6 +92,10 @@ class LLMClient:
         # Free tiers limit requests per minute: wait between calls to the same provider
         self.min_interval = {p: 60.0 / rpm for p, rpm in cfg["llm"].get("requests_per_minute", {}).items()}
         self._last_call: dict[str, float] = {}
+        # Retries: rate limit (429) 15, 30, 60 s; overload (5xx, "high demand") 5, 15, 45 s
+        self.waits_rate_limit: tuple = (15, 30, 60)
+        self.waits_overload: tuple = (5, 15, 45)
+        self.timeout = 120
         self._pace = threading.Lock()
 
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,30 +212,43 @@ class LLMClient:
                 print(f"  embedded {min(start + batch, len(todo))}/{len(todo)}", flush=True)
         return np.vstack([out[i] for i in range(len(texts))]) if texts else np.zeros((0, 0), dtype=np.float32)
 
-    def _post(self, path: str, body: dict, attempts: int = 4) -> dict:
+    def _post(self, path: str, body: dict) -> dict:
         req = urllib.request.Request(
             self.url + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
         )
-        for i in range(attempts):
+        tries_429, tries_5xx = 0, 0
+        while True:
             try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     return json.load(resp)
             except urllib.error.HTTPError as err:
                 detail = err.read().decode(errors="replace")[:500]
                 if err.code == 429:
-                    if i < attempts - 1:
-                        time.sleep(15 * 2 ** i)  # rate limit: 15 s, 30 s, 60 s
+                    if tries_429 < len(self.waits_rate_limit):
+                        time.sleep(self.waits_rate_limit[tries_429])
+                        tries_429 += 1
                         continue
                     raise RateLimited(f"{body.get('model')}: rate limit or daily quota reached. {detail}") from None
-                if err.code in (500, 502, 503, 504) and i < attempts - 1:
-                    time.sleep(5 * 3 ** i)  # 5 s, 15 s, 45 s: overload spikes ("high demand") last a while
-                    continue
                 if err.code in (500, 502, 503, 504):
+                    if tries_5xx < len(self.waits_overload):
+                        time.sleep(self.waits_overload[tries_5xx])
+                        tries_5xx += 1
+                        continue
                     raise Overloaded(f"{body.get('model')}: provider error {err.code} after retries. {detail}") from None
                 raise RuntimeError(f"Bifrost returned {err.code}: {detail}") from None
             except urllib.error.URLError as err:
+                if isinstance(err.reason, TimeoutError):
+                    raise Overloaded(f"{body.get('model')}: no answer within {self.timeout} s") from None
                 raise RuntimeError(f"Cannot reach Bifrost at {self.url} (is it running? `make gateway`): {err.reason}") from None
-        raise RuntimeError("unreachable")
+            except TimeoutError:
+                raise Overloaded(f"{body.get('model')}: no answer within {self.timeout} s") from None
+
+    def fail_fast(self) -> "LLMClient":
+        """For the app: a doctor should not wait minutes for a provider that is down.
+        No retry on rate limits, one short retry on overload, at most 60 s per call.
+        (The evaluation keeps the long retries: there, waiting is fine.)"""
+        self.waits_rate_limit, self.waits_overload, self.timeout = (), (2,), 60
+        return self
 
 
 def main() -> None:
