@@ -1,0 +1,47 @@
+{
+  "model": "openai/gpt-6-luna",
+  "split": "test",
+  "metrics": {
+    "cases": 500,
+    "correct_not_ranked": 339,
+    "top1": {
+      "value": 0.162,
+      "ci95": [
+        0.13,
+        0.194
+      ]
+    },
+    "top5": {
+      "value": 0.276,
+      "ci95": [
+        0.236,
+        0.314
+      ]
+    },
+    "top10": {
+      "value": 0.322,
+      "ci95": [
+        0.28,
+        0.362
+      ]
+    },
+    "mrr": {
+      "value": 0.214,
+      "ci95": [
+        0.18,
+        0.247
+      ]
+    }
+  },
+  "not_in_top10": 339,
+  "name_translation": {
+    "omim": 3809,
+    "gene": 471,
+    "none": 294,
+    "exact": 224,
+    "loose": 55,
+    "official": 147
+  },
+  "usd_this_run": 0.1066,
+  "cached_calls": 283
+}
