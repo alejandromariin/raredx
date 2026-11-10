@@ -50,7 +50,7 @@ eval:
 fusion:
   # LLMs whose answers feed the fusion. During development only the cheap one;
   # for the final evaluation, the four ensemble models.
-  models: [openai/gpt-6-luna]
+  models: [openai/gpt-6-luna, gemini/gemini-3.5-flash-lite]
   ranker_top: 50               # candidates taken from the ranker per patient
   learning_curve: [250, 500, 1000]
 phenotype:
