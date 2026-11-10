@@ -220,7 +220,7 @@ class LLMClient:
                         continue
                     raise RateLimited(f"{body.get('model')}: rate limit or daily quota reached. {detail}") from None
                 if err.code in (500, 502, 503, 504) and i < attempts - 1:
-                    time.sleep(2 ** i)  # 1 s, 2 s, 4 s
+                    time.sleep(5 * 3 ** i)  # 5 s, 15 s, 45 s: overload spikes ("high demand") last a while
                     continue
                 raise RuntimeError(f"Bifrost returned {err.code}: {detail}") from None
             except urllib.error.URLError as err:
