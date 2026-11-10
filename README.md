@@ -41,7 +41,7 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 - **Split by paper.** Train / validation / test are split by source publication, never by patient (70 / 10 / 20 %). Samples of 1,000 / 200 / 500 cases, at most 5 per paper; the exact case lists are versioned in `results/samples/`.
 - **Leakage guard.** When a case is evaluated, the ranker ignores every HPO annotation derived from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 %), artificially.
 - **Symptom extraction (round trip).** There are no public clinical notes with known HPO codes for these patients, so an LLM writes a short clinical note from each published case and the extractor turns it back into codes. We measure how many original symptoms come back and, above all, whether the ranker still finds the disease with the extracted codes (`results/extraction_val.json`). The same model family writes and reads the notes, so real notes may be harder.
-- **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases (`results/contamination.json`).
+- **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases. Result: no sign of it (see below).
 - **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
 
 ### Preliminary results (validation, 200 cases, GPT-6 Luna as the only LLM)
@@ -58,6 +58,17 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 - **Learning curve:** 250 / 500 / 1,000 training cases give 21 / 21.5 / 23.5 % top 1, nearly flat, so the training sample stays at 1,000 cases.
 - **Ceiling:** the correct disease is among the candidates in 41.5 % of validation cases; adding more LLMs should raise this.
 - **Cost and time per patient** (`results/cost_time.json`, 10 patients with real calls): about **10.5 s**, almost all of it waiting for the LLM (ranker 0.003 s, fusion 0.02 s), and **0.0005 $** with GPT-6 Luna. With several LLMs queried in parallel, time is that of the slowest one.
+
+### Contamination check (gpt-oss-120b, 86 pairs of cases of the same disease)
+
+`results/contamination.json`. Top 10 accuracy on cases published before and after the model's training cutoff (July 2024):
+
+| | Before cutoff (could have been read) | After cutoff (cannot have been read) |
+|---|---|---|
+| gpt-oss-120b | 9.3 % | 10.5 % |
+| Ontology ranker (no cutoff, difficulty control) | 29.1 % | 33.7 % |
+
+No sign of memorisation: the LLM is not better on the cases it could have read. The test has limited power (gpt-oss-120b finds few diagnoses on these cases, and the 95 % interval of the difference is -8 to +15 points), and it cannot be run on the commercial models in the ensemble, which were trained after the most recent case in the dataset. Their results may include some memorisation; this is a limitation of every evaluation on published cases.
 
 ### Symptom extraction (round trip, 100 validation cases)
 
