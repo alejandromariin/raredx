@@ -112,7 +112,14 @@ python3 -m raredx.evaluate contamination                               # older v
 python3 -m raredx.evaluate extraction --limit 100                      # note -> symptoms round trip
 ```
 
-Try the symptom extraction on your own text:
+Run the whole flow on a clinical note (LangGraph: extraction -> doctor review -> ranker and LLMs in parallel -> fusion):
+
+```bash
+make train                      # train the fusion on the training sample -> models/fusion.pkl
+python3 -m raredx.pipeline "3-year-old girl who does not walk yet, with frequent seizures, a small head and low-set ears. Hearing and heart are normal." --sex female --age 3
+```
+
+Try the symptom extraction alone on your own text:
 
 ```bash
 python3 -m raredx.phenotype "4-year-old boy with seizures since age 2, widely spaced eyes and very long fingers. Hearing is normal."
@@ -129,7 +136,9 @@ raredx/
   llm.py        Bifrost client: exact cache and spending limit
   ensemble.py   LLM prompts, answer parsing
   fusion.py     candidate tables and fusion models
+  pipeline.py   the full flow as a LangGraph graph, with a pause for the doctor's review
   evaluate.py   splits, metrics and every evaluation command
+models/         trained fusion model (committed, so the app needs no training)
 results/        versioned evaluation results and case samples
 bifrost/        Bifrost gateway configuration
 settings.yaml   data versions, budget, models, evaluation parameters

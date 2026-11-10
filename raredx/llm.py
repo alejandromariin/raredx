@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -32,6 +33,28 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DB = ROOT / ".cache" / "llm.sqlite"
+
+
+class _Rows(list):
+    def fetchone(self):
+        return self[0] if self else None
+
+
+class _LockedDB:
+    """The SQLite cache, usable from several threads at once (the pipeline asks
+    several LLMs in parallel). Each statement runs under a lock."""
+
+    def __init__(self, path: Path):
+        self._con = sqlite3.connect(path, check_same_thread=False)
+        self._lock = threading.Lock()
+
+    def execute(self, sql: str, args: tuple = ()) -> _Rows:
+        with self._lock:
+            return _Rows(self._con.execute(sql, args).fetchall())
+
+    def commit(self) -> None:
+        with self._lock:
+            self._con.commit()
 
 
 class BudgetExceeded(RuntimeError):
@@ -65,9 +88,10 @@ class LLMClient:
         # Free tiers limit requests per minute: wait between calls to the same provider
         self.min_interval = {p: 60.0 / rpm for p, rpm in cfg["llm"].get("requests_per_minute", {}).items()}
         self._last_call: dict[str, float] = {}
+        self._pace = threading.Lock()
 
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(db_path)
+        self.db = _LockedDB(db_path)
         self.db.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, response TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS spend (ts REAL, model TEXT, tokens_in INT, tokens_out INT, usd REAL)")
         if "seconds" not in [r[1] for r in self.db.execute("PRAGMA table_info(spend)")]:
@@ -113,10 +137,11 @@ class LLMClient:
             raise BudgetExceeded(f"Spent {self.spent():.2f} $ of {self.budget:.2f} $; refusing new calls")
 
         # 1. CALL through Bifrost (retries on rate limits and server errors)
-        wait = self._last_call.get(provider, 0.0) + self.min_interval.get(provider, 0.0) - time.monotonic()
+        with self._pace:
+            wait = self._last_call.get(provider, 0.0) + self.min_interval.get(provider, 0.0) - time.monotonic()
+            self._last_call[provider] = time.monotonic() + max(wait, 0.0)
         if wait > 0:
             time.sleep(wait)
-        self._last_call[provider] = time.monotonic()
         started = time.perf_counter()
         data = self._post("/v1/chat/completions", body)
         seconds = time.perf_counter() - started

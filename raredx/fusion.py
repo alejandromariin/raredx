@@ -15,7 +15,9 @@ Reference without learning: RRF (reciprocal rank fusion), score = sum of 1 / (60
 """
 from __future__ import annotations
 
+import datetime
 import math
+import pickle
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -23,6 +25,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
+MODELS = ROOT / "models"        # trained fusion model, committed so the demo needs no training
 NOT_LISTED = 11          # position given to a disease an LLM did not list (its list has 10)
 
 # Orphanet prevalence classes -> approximate value (fraction of the population)
@@ -31,7 +34,13 @@ PREVALENCE = {"<1 / 1 000 000": 5e-7, "1-9 / 1 000 000": 5e-6, "1-9 / 100 000": 
 
 
 def load_prevalence() -> dict[str, float]:
-    """ORPHA code -> log10 of its highest known prevalence (e.g. Marfan -> log10(3e-4) = -3.5)."""
+    """ORPHA code -> log10 of its highest known prevalence (e.g. Marfan -> log10(3e-4) = -3.5).
+    Parsing the Orphanet XML takes ~15 s, so the result is cached in data/processed/."""
+    import json
+    cache = ROOT / "data" / "processed" / "prevalence.json"
+    source = RAW / "orphanet_product9_prev.xml"
+    if cache.exists() and cache.stat().st_mtime >= source.stat().st_mtime:
+        return json.loads(cache.read_text(encoding="utf-8"))
     out = {}
     for _, el in ET.iterparse(RAW / "orphanet_product9_prev.xml"):
         if el.tag == "Disorder" and el.find("OrphaCode") is not None:
@@ -39,6 +48,8 @@ def load_prevalence() -> dict[str, float]:
             if values:
                 out["ORPHA:" + el.findtext("OrphaCode")] = math.log10(max(values))
             el.clear()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(out), encoding="utf-8")
     return out
 
 
@@ -60,8 +71,11 @@ class FeatureBuilder:
                "disease_annotations_log", "case_n_present", "case_mean_ic", "case_n_excluded"]
         )
 
-    def case_table(self, case: dict, guard: bool = True) -> tuple[list[str], np.ndarray]:
-        """(candidate OMIM codes, feature matrix) for one patient."""
+    def case_table(self, case: dict, guard: bool = True, llm_answers: dict | None = None) -> tuple[list[str], np.ndarray]:
+        """(candidate OMIM codes, feature matrix) for one patient.
+        llm_answers: the LLMs' answers when they were already obtained (the pipeline asks
+        them in parallel before this step). A model missing from it counts as having
+        proposed nothing (e.g. it failed)."""
         r = self.ranker
         scores = r.score(case["hpo_present"], case["hpo_excluded"], exclude_ref=case["pmid"] if guard else None)
         order = np.argsort(-scores, kind="stable")
@@ -73,7 +87,8 @@ class FeatureBuilder:
         llm = {}
         for m in self.models:
             said = {}
-            for c in self.ensemble.diagnose(case, m)["candidates"]:
+            answer = llm_answers.get(m) if llm_answers is not None else self.ensemble.diagnose(case, m)
+            for c in (answer or {"candidates": []})["candidates"]:
                 for code in c["codes"]:
                     if code in r.index and code not in said:
                         said[code] = (c["rank"], len(c["codes"]))
@@ -158,6 +173,24 @@ class LightGBMFusion:
 
     def score(self, ds: dict) -> np.ndarray:
         return self.model.predict(ds["X"])
+
+
+def save_fusion(model, columns: list[str], llm_models: list[str], train_cases: int, path: Path | None = None) -> Path:
+    """Save the trained fusion with what is needed to use it correctly later."""
+    path = path or MODELS / "fusion.pkl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as fh:
+        pickle.dump({"model": model, "learner": model.name, "columns": columns, "llm_models": llm_models,
+                     "train_cases": train_cases, "created": datetime.date.today().isoformat()}, fh)
+    return path
+
+
+def load_fusion(path: Path | None = None) -> dict:
+    path = path or MODELS / "fusion.pkl"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found: train it with `make train`")
+    with open(path, "rb") as fh:
+        return pickle.load(fh)
 
 
 def ranks_from_scores(ds: dict, scores: np.ndarray) -> list[float | None]:

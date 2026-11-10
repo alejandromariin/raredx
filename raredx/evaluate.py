@@ -565,10 +565,31 @@ def eval_extraction(split: str = "val", limit: int = 100) -> dict:
     (RESULTS / f"extraction_examples_{split}.json").write_text(json.dumps(examples, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return result
 
+def train_fusion() -> dict:
+    """Train the fusion on the training sample and save it to models/fusion.pkl (used by the app).
+    The validation and test samples are not used, so they stay clean for evaluation."""
+    from .ensemble import Ensemble
+    from .fusion import FeatureBuilder, LightGBMFusion, LogRegFusion, save_fusion
+    from .ranker import OntologyRanker
+    cfg = load_settings()["fusion"]
+    ranker = OntologyRanker()
+    fb = FeatureBuilder(ranker, Ensemble(onto=ranker.onto), cfg["models"], cfg["ranker_top"])
+    print("building the training table...", flush=True)
+    train = fb.dataset(sample_cases_of("train"))
+    try:
+        import lightgbm  # noqa: F401
+        learner = LightGBMFusion
+    except ImportError:
+        print("lightgbm not installed: saving the logistic regression instead")
+        learner = LogRegFusion
+    path = save_fusion(learner().fit(train), fb.columns, cfg["models"], len(train["groups"]))
+    return {"saved": str(path.relative_to(ROOT)), "learner": learner.name, "llm_models": cfg["models"],
+            "train_cases": len(train["groups"])}
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`/`contamination`: a random subset of N cases/pairs")
@@ -587,6 +608,8 @@ def main() -> None:
         print(json.dumps(eval_timing(args.limit or 10), indent=2))
     elif args.command == "contamination":
         print(json.dumps(eval_contamination(args.limit), indent=2))
+    elif args.command == "train-fusion":
+        print(json.dumps(train_fusion(), indent=2))
     elif args.command == "extraction":
         print(json.dumps(eval_extraction(args.split, args.limit or 100), indent=2))
 

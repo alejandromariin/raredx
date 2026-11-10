@@ -14,8 +14,8 @@ gateway:  ## Start Bifrost (LLM gateway) on http://localhost:8080
 gateway-stop:
 	docker compose down
 
-train:  ## Train the fusion model
-	@echo "TODO"
+train:  ## Train the fusion model on the training sample -> models/fusion.pkl
+	$(PYTHON) -m raredx.evaluate train-fusion
 
 eval:   ## Run the full evaluation and write results/
 	@echo "TODO: $(PYTHON) -m raredx.evaluate"
