@@ -1,0 +1,68 @@
+{
+  "patients": 3,
+  "llm_models": [
+    "openai/gpt-6-luna",
+    "gemini/gemini-3.5-flash-lite"
+  ],
+  "summary_model": "openai/gpt-6-luna",
+  "mean": {
+    "seconds_to_review": 5.6333,
+    "seconds_to_result": 12.0333,
+    "usd": 0.0009,
+    "tavily_searches": 9.0
+  },
+  "note": "usd counts paid models only (GPT-6 Luna, OpenAI embeddings); Gemini and Groq free tiers cost 0; Tavily is counted in searches (credits)",
+  "per_patient": [
+    {
+      "seconds_to_review": 5.6,
+      "seconds_to_result": 10.8,
+      "steps": {
+        "extract": 5.54,
+        "gemini/gemini-3.5-flash-lite": 4.05,
+        "openai/gpt-6-luna": 7.33,
+        "ranker": 0.002,
+        "fuse": 0.127,
+        "explain": 0.008,
+        "evidence": 3.34,
+        "summarize": 2.86
+      },
+      "usd": 0.00074,
+      "tavily_searches": 9,
+      "failed": []
+    },
+    {
+      "seconds_to_review": 5.8,
+      "seconds_to_result": 11.9,
+      "steps": {
+        "extract": 5.8,
+        "gemini/gemini-3.5-flash-lite": 3.94,
+        "openai/gpt-6-luna": 8.63,
+        "ranker": 0.001,
+        "fuse": 0.018,
+        "explain": 0.01,
+        "evidence": 3.18,
+        "summarize": 2.8
+      },
+      "usd": 0.00081,
+      "tavily_searches": 9,
+      "failed": []
+    },
+    {
+      "seconds_to_review": 5.5,
+      "seconds_to_result": 13.4,
+      "steps": {
+        "extract": 5.52,
+        "gemini/gemini-3.5-flash-lite": 4.48,
+        "openai/gpt-6-luna": 9.89,
+        "ranker": 0.007,
+        "fuse": 0.003,
+        "explain": 0.028,
+        "evidence": 3.34,
+        "summarize": 3.42
+      },
+      "usd": 0.001,
+      "tavily_searches": 9,
+      "failed": []
+    }
+  ]
+}

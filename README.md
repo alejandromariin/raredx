@@ -1,51 +1,88 @@
 # raredx
 
-Rare-disease differential diagnosis support: from a clinical description to a ranked, explained list of candidate rare diseases.
+**Differential diagnosis support for rare diseases.** A doctor writes a clinical note; raredx codes the findings, lets the doctor review them, and returns a ranked, explained list of rare diseases to consider, with the findings that would best tell them apart and live evidence from the literature.
 
 > **Not a diagnostic tool.** raredx is a research prototype to support clinicians. It does not diagnose and must not be used for clinical decisions.
 
 Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
-## Status
+| On 500 held-out published patients | Correct disease ranked first | Correct disease in the top 10 |
+|---|---|---|
+| Best single source (GPT-6 Luna) | 15.6 % | 31.8 % |
+| **raredx (learned fusion of ontology + 2 LLMs)** | **26.0 %** | **41.0 %** |
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, explanations per candidate, live evidence with Tavily, the API and the web interface work. Final results on the held-out test sample are below.
++10.4 points in top 1 (95 % CI +7.4 to +13.6, paired bootstrap, p < 0.001), with an evaluation built to avoid leakage from the published cases. About 12 s and 0.001 $ per patient.
+
+## The problem
+
+- **Rare diseases are rare one by one, not together.** More than 6,000 rare diseases affect an estimated 263 to 446 million people worldwide, 3.5 to 5.9 % of the population ([Nguengang Wakap et al., 2020](https://pubmed.ncbi.nlm.nih.gov/31527858/)).
+- **Diagnosis takes years.** In the Rare Barometer survey of people living with a rare disease, the average time to diagnosis was 4.7 years ([Faye et al., 2024](https://pubmed.ncbi.nlm.nih.gov/38755315/)).
+- **No single clinician knows them all.** A pediatrician or general geneticist may see a given syndrome once in a career. What helps is a short list of plausible candidates, why each one fits, and what to check next.
+
+**Who it is for:** clinical geneticists, pediatricians and neurologists preparing a genetic work-up or a referral. **How it is used:** the doctor pastes or writes the clinical note (any language), reviews the findings coded from it, and gets the differential in seconds, with the evidence behind each candidate and the next findings worth checking. The doctor stays in charge at every step.
+
+## What it does
+
+1. **Case.** A free-text note, in any language, plus age and sex.
+2. **Review.** The findings read from the note, coded with the Human Phenotype Ontology (HPO). Each one is linked to the words it came from; the doctor can switch present / absent, pick another term or add one with an HPO search.
+3. **Differential.** Live progress of each source (ontology ranker, each LLM, fusion, explanations, live evidence), then the ten most likely diseases with:
+   - where each source ranked it, a link to OMIM and a **confidence level** measured on held-out cases;
+   - for the top 5, **why**: patient findings it explains, absent findings that argue against it, frequent findings not mentioned yet, the genes to test, and a one-sentence summary;
+   - **most useful next findings**: the findings that would best separate the top candidates; marking one present or absent recomputes the differential;
+   - **live evidence** for the top 3 (recent literature, clinical trials, patient organisations) found at query time with Tavily.
+
+Every piece of information says where it comes from (HPO files, an LLM, Tavily).
+
+## What's new
+
+Phenotype-driven tools rank diseases by comparing a patient's HPO terms with curated disease annotations; LLM-based systems, including recent agentic ones such as DeepRare ([Zhao et al., 2025](https://arxiv.org/abs/2506.20430)), propose diagnoses from the clinical description. raredx combines both and adds:
+
+- **A learned fusion, measured against each source.** A ranking model (LightGBM, lambdarank) learns from 1,000 published cases when to trust the ontology and when to trust each LLM. It beats the best single source by 10 points in top 1 on held-out cases, while combining the same sources without learning (reciprocal rank fusion) or linearly (logistic regression) does not.
+- **An evaluation designed against leakage.** Train / validation / test are split by publication, and when a case is evaluated the ontology ranker ignores every annotation curated from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 % on validation): many disease annotations come from the very papers the test cases are taken from. LLM memorisation is checked with an open model whose training cutoff falls inside the dataset.
+- **The next most useful finding, as an interactive loop.** Expected information gain over the top candidates, from HPO annotation frequencies, turns the list into a guided work-up: check this finding, mark it, see the differential update.
+- **A calibrated confidence level.** Low / medium / high, with what that level achieved on held-out patients (first suggestion right about half the time when high, almost never when low).
+- **Fully reproducible and cheap.** Open source, every result regenerated with one command from cached responses, about 0.001 $ per patient with a small paid model and a free one.
 
 ## How it works
 
 ```
 Clinical note (free text)
    v
-Symptom extraction    (raredx/phenotype.py)  LLM lists symptoms -> matched to HPO terms
+Symptom extraction   phenotype.py   LLM lists findings -> matched to HPO terms (exact name, then embeddings)
    v
-Patient symptoms (HPO terms), reviewed by the doctor
-   |-- Ontology ranker   (raredx/ranker.py)    ranks all 8,465 OMIM diseases by symptom similarity
-   |-- LLM ensemble      (raredx/ensemble.py)  each LLM proposes its 10 most likely diagnoses
+Doctor review        pipeline.py    the LangGraph flow pauses until the doctor confirms the findings
    v
-Learned fusion (raredx/fusion.py)              LightGBM re-ranks the candidates of both sources
+   |-- Ontology ranker   ranker.py     ranks all 8,465 OMIM diseases by HPO similarity (no LLM)
+   |-- LLM ensemble      ensemble.py   GPT-6 Luna and Gemini 3.5 Flash-Lite, 10 diagnoses each, in parallel
    v
-Ranked differential diagnosis
+Learned fusion       fusion.py      LightGBM re-ranks the candidates of all sources + confidence level
+   v
+Explanations         explain.py     fits / against / typical / genes from HPO files; next most useful findings
+   v
+   |-- Summary           explain.py    one LLM call, a sentence per candidate, only from the facts above
+   |-- Live evidence     evidence.py   Tavily: literature, trials, patient organisations (top 3)
+   v
+Ranked, explained differential (api.py + frontend/)
 ```
 
-- **Symptom extraction.** An LLM reads the note and lists each symptom as a standard clinical term, marking the ones the patient explicitly does not have ("hearing is normal"). Each term is matched to the Human Phenotype Ontology (HPO): by exact name or synonym first, otherwise by meaning with OpenAI embeddings over the ~41,000 HPO names and synonyms. The five closest terms are kept so the doctor can correct the match.
-- **Ontology ranker.** Compares the patient's symptoms with each disease's symptoms in the Human Phenotype Ontology annotations. Rare symptoms count more than common ones (information content), and related symptoms count partially through the HPO hierarchy. No LLM involved.
-- **LLM ensemble.** Each LLM receives the symptoms by readable name, plus age and sex, and returns its top 10 as JSON. Disease names are translated to OMIM codes using OMIM names, Orphanet synonyms and gene symbols (raredx/diseases.py); OMIM numbers proposed by the LLM are verified, not trusted.
-- **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence...). A LightGBM ranking model (lambdarank) trained on 1,000 published cases learns how much to trust each source.
-- **Explanations.** For each of the top 5 candidates, from the ontology files only (instant, nothing invented): the patient's findings it explains, absent findings that argue against it, frequent findings of the disease not mentioned yet, and the genes to test. One LLM call then writes a sentence per candidate using only those facts.
-- **Most useful next findings.** Among the findings of the top candidates, the ones that best separate them (expected information gain, from HPO annotation frequencies). The doctor can mark one as present or absent and the differential is recomputed.
-- **Live evidence.** For the top 3 candidates, [Tavily](https://tavily.com) searches the web at the moment of the query: recent literature (PubMed, PMC, GeneReviews), clinical trials (ClinicalTrials.gov) and patient information and organisations (Orphanet, NORD, GARD). It is only shown to the doctor with its links; it never changes the ranking, so the evaluation is not affected. About 9 Tavily credits per patient, cached.
-- **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (raredx/llm.py), with an exact response cache, a hard spending limit and per-provider rate limiting for free tiers.
-- **Models.** Ensemble: GPT-6 Luna (OpenAI, about 0.0005 $ per patient) and Gemini 3.5 Flash-Lite (Google AI Studio free tier). Contamination check: gpt-oss-120b (Groq free tier). Larger models were left out to keep the whole project within a small budget.
-- **Privacy note.** Free tiers may use the data sent to them to improve their models. That is fine for this evaluation, which only uses already-published cases, but real patient data would require paid plans or self-hosted models.
+- **Symptom extraction.** An LLM reads the note and lists each finding as a standard clinical term, marking the ones the patient explicitly does not have ("hearing is normal"). Each term is matched to HPO by exact name or synonym first, otherwise by meaning with OpenAI embeddings over the ~41,000 HPO names and synonyms; the five closest terms are kept so the doctor can correct the match.
+- **Ontology ranker.** Compares the patient's findings with each disease's HPO annotations. Rare findings count more than common ones (information content), and related findings count partially through the HPO hierarchy, minus a penalty for findings the patient does not have.
+- **LLM ensemble.** Each LLM receives the findings by readable name, plus age and sex, and returns its top 10 as JSON. Disease names are translated to OMIM codes using OMIM names, Orphanet synonyms and gene symbols (`diseases.py`); OMIM numbers proposed by an LLM are verified, not trusted.
+- **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence, ...). LightGBM learns from 1,000 training cases how much to trust each source.
+- **Explanations and next findings.** From the HPO files only, so they are instant and cannot invent anything. The summary LLM sees only those facts.
+- **Live evidence.** Shown to the doctor with its links; it never changes the ranking, so it does not affect the evaluation.
+- **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (`llm.py`), one OpenAI-compatible endpoint for OpenAI, Google AI Studio and Groq, with an exact response cache, a hard spending limit, per-provider rate limits for free tiers, and fast failure in the app: if one LLM does not answer, the differential is computed without it and the doctor is told.
 
 ## Evaluation
 
-Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenopacket-store) (10,374 published patients, 780 diseases, confirmed diagnoses). The evaluation is designed so the system cannot benefit from information it would not have in practice:
+Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenopacket-store) (10,374 published patients, 780 diseases, confirmed diagnoses, GA4GH phenopackets). The evaluation is designed so the system cannot benefit from information it would not have in practice:
 
 - **Split by paper.** Train / validation / test are split by source publication, never by patient (70 / 10 / 20 %). Samples of 1,000 / 200 / 500 cases, at most 5 per paper; the exact case lists are versioned in `results/samples/`.
 - **Leakage guard.** When a case is evaluated, the ranker ignores every HPO annotation derived from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 %), artificially.
-- **Symptom extraction (round trip).** There are no public clinical notes with known HPO codes for these patients, so an LLM writes a short clinical note from each published case and the extractor turns it back into codes. We measure how many original symptoms come back and, above all, whether the ranker still finds the disease with the extracted codes (`results/extraction_val.json`). The same model family writes and reads the notes, so real notes may be harder.
-- **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases. Result: no sign of it (see below).
-- **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
+- **Contamination.** LLMs may have memorised published cases; checked with the open model gpt-oss-120b, whose training cutoff (July 2024) falls inside the dataset (see below).
+- **Symptom extraction.** A round trip: an LLM writes a clinical note from each published case and the extractor turns it back into codes (see below).
+- **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals; ties are counted fairly; methods are compared patient by patient (paired bootstrap).
+- **One command.** `make eval` regenerates every result in `results/` from the cached responses; `make test` runs only the final test.
 
 ### Final results on the held-out test sample (500 cases, `make test`)
 
@@ -91,7 +128,6 @@ These 500 patients, from papers not used anywhere else, were never used to build
 - **Ablations** (`results/ablation_val.json`, top 1 with everything 23 %): without the ranker's columns 15.5 %, without the LLMs' columns 18 %. Prevalence, disease-level and patient-level columns change top 1 by at most 1 point.
 - **Learning curve:** 250 / 500 / 1,000 training cases give 21 / 20 / 23 % top 1, nearly flat, so the training sample stays at 1,000 cases.
 - **Ceiling:** the correct disease is among the candidates (ranker top 50 + LLM lists) in 43 % of validation cases; the fusion can only reorder those.
-- **Cost and time per patient** (`results/cost_time.json`, 10 patients with real calls): about **10.5 s**, almost all of it waiting for the LLM (ranker 0.003 s, fusion 0.02 s), and **0.0005 $** with GPT-6 Luna. With several LLMs queried in parallel, time is that of the slowest one.
 
 ### Contamination check (gpt-oss-120b, 86 pairs of cases of the same disease)
 
@@ -118,9 +154,39 @@ No sign of memorisation: the LLM is not better on the cases it could have read. 
 
 Going through a free-text note costs almost nothing in diagnostic accuracy (top 1: 16 % -> 14 %, top 10: 28 % -> 27 %, within the confidence intervals). About 0.0002 $ per note with GPT-6 Luna.
 
+## Cost and time
+
+Measured on the three illustrative cases of the interface with all caches off, so every call is real (`python -m raredx.evaluate app-timing`, `results/cost_time_app.json`):
+
+| Step | Time per patient |
+|---|---|
+| Note -> findings ready for review (LLM extraction + HPO matching) | 5.6 s |
+| "Compute differential" -> full result (ranker, two LLMs in parallel, fusion, explanations, summary and Tavily in parallel) | 12.0 s |
+| of which: ranker / fusion / explanations | < 0.2 s together |
+
+- **Cost: about 0.0009 $ per patient** (GPT-6 Luna for extraction, diagnosis and summary, plus OpenAI embeddings). Gemini 3.5 Flash-Lite runs on the Google AI Studio free tier. Tavily: 9 searches (credits) per patient.
+- **The whole project** (all evaluations, about 4,000 LLM calls) cost under 1 $ of OpenAI usage.
+
+## Limitations
+
+- **Published cases are not real notes.** Patients come from papers, and the notes used to test extraction were written by an LLM. Real clinical notes are messier.
+- **The ceiling is the candidate list.** The correct disease is among the candidates in about half of test patients; the fusion can only reorder them.
+- **Memorisation cannot be ruled out** for the commercial LLMs, trained after the most recent case in the dataset; the check on an older open model found no sign of it, with limited statistical power.
+- **Phenotype only.** No genomic data; in practice a differential like this guides which genetic test to order, it does not replace it.
+- **Privacy.** The free tiers used here may use submitted data to improve their models: fine for published cases, not for real patients. The app warns not to enter identifying data.
+- **Not validated clinically, not a medical device.**
+
+## Roadmap
+
+1. **Private deployment:** self-hosted open models behind the same Bifrost gateway (no code change, only `settings.yaml`), so patient notes never leave the hospital.
+2. **Genomics:** combine the differential with exome or genome variants (e.g. Exomiser) to rank candidate genes, the step that confirms most diagnoses.
+3. **Larger candidate pool:** more diverse LLMs and retrieval over GeneReviews to raise the ceiling.
+4. **Standards:** read and write cases as GA4GH phenopackets to plug into existing clinical pipelines.
+5. **Clinical evaluation:** retrospective study on de-identified notes with a genetics department, then a prospective one.
+
 ## Quickstart
 
-Requirements: Python 3.10+, Docker (for Bifrost), API keys for OpenAI, Google AI Studio (free), Groq (free) and Tavily (live evidence; optional).
+Requirements: Python 3.10+, Docker (for Bifrost), API keys for OpenAI, Google AI Studio (free), Groq (free; contamination check only) and Tavily (live evidence; optional).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -129,62 +195,47 @@ cp .env.example .env            # then add your API keys
 make data                       # download datasets, build the case table, fetch publication dates
 make split                      # train / validation / test samples
 make gateway                    # start Bifrost on http://localhost:8080
-                                # after editing bifrost/config.json: docker compose restart bifrost
-                                # after adding keys to .env:      docker compose up -d --force-recreate bifrost
 python3 -m raredx.llm ping      # check the gateway and the API key
+make api                        # API + interface on http://localhost:8000 (API docs at /docs)
 ```
 
-Evaluation commands (results are written to `results/`):
+The trained fusion model and its confidence levels are in `models/`, so the app works without training. To retrain and reproduce the evaluation:
 
 ```bash
-python3 -m raredx.evaluate ranker --split val                          # ranker alone
-python3 -m raredx.evaluate llm --model openai/gpt-6-luna --split val   # one LLM alone
-python3 -m raredx.evaluate fusion                                      # train + evaluate the fusion
-python3 -m raredx.evaluate ablation                                    # remove one group of columns at a time
-python3 -m raredx.evaluate timing                                      # cost and time per patient
-python3 -m raredx.evaluate contamination                               # older vs newer cases (gpt-oss-120b)
-python3 -m raredx.evaluate extraction --limit 100                      # note -> symptoms round trip
+make train                      # fusion on the training sample -> models/fusion.pkl
+make test                       # final evaluation on the 500 test cases -> results/test.json
+make eval                       # every evaluation (needs the LLM answers: cached, or about 4,000 calls)
 ```
 
-Start the web interface (with Bifrost running), then open http://localhost:8000:
+Other commands:
 
 ```bash
-make api                        # API + interface; interactive API docs at http://localhost:8000/docs
+python3 -m raredx.pipeline "3-year-old girl who does not walk yet, with frequent seizures, a small head and low-set ears." --sex female --age 3
+python3 -m raredx.phenotype "4-year-old boy with seizures since age 2, widely spaced eyes and very long fingers."
+python3 -m raredx.evidence "Rett syndrome"
+python3 -m raredx.evaluate llm --model openai/gpt-6-luna --split val    # one LLM alone
 ```
 
-The interface has three steps: write the clinical note, review the coded symptoms (each one linked to the words it came from, with alternatives and an HPO search to add findings), and the differential, with live progress and where each source ranked each disease.
-
-Run the whole flow on a clinical note (LangGraph: extraction -> doctor review -> ranker and LLMs in parallel -> fusion):
-
-```bash
-make train                      # train the fusion on the training sample -> models/fusion.pkl
-python3 -m raredx.pipeline "3-year-old girl who does not walk yet, with frequent seizures, a small head and low-set ears. Hearing and heart are normal." --sex female --age 3
-```
-
-Try the symptom extraction alone on your own text:
-
-```bash
-python3 -m raredx.phenotype "4-year-old boy with seizures since age 2, widely spaced eyes and very long fingers. Hearing is normal."
-```
+Bifrost: after editing `bifrost/config.json`, `docker compose restart bifrost`; after adding keys to `.env`, `docker compose up -d --force-recreate bifrost`.
 
 ## Repository layout
 
 ```
 raredx/
-  phenotype.py  clinical note -> HPO symptoms (LLM + embeddings)
   data.py       download datasets, build the case table, fetch PubMed dates
-  diseases.py   disease names <-> OMIM codes (OMIM, Orphanet, gene symbols)
+  phenotype.py  clinical note -> HPO findings (LLM + embeddings)
   ranker.py     ontology ranker
-  llm.py        Bifrost client: exact cache and spending limit
+  diseases.py   disease names <-> OMIM codes (OMIM, Orphanet, gene symbols)
+  llm.py        Bifrost client: exact cache, spending limit, retries
   ensemble.py   LLM prompts, answer parsing
   fusion.py     candidate tables and fusion models
   explain.py    explanations per candidate and most useful next findings
   evidence.py   live evidence from the web with Tavily
   pipeline.py   the full flow as a LangGraph graph, with a pause for the doctor's review
   api.py        FastAPI: cases, review, progress events, HPO search; serves the interface
-frontend/       the web interface (plain HTML, CSS and JavaScript, no build step)
   evaluate.py   splits, metrics and every evaluation command
-models/         trained fusion model (committed, so the app needs no training)
+frontend/       the web interface (plain HTML, CSS and JavaScript, no build step)
+models/         trained fusion model and confidence levels (committed)
 results/        versioned evaluation results and case samples
 bifrost/        Bifrost gateway configuration
 settings.yaml   data versions, budget, models, evaluation parameters
@@ -193,7 +244,8 @@ data/           downloaded and processed data (not in git; created by `make data
 
 ## Use of AI tools
 
-_TBD (required by the hackathon rules)._
+- **Inside the product:** GPT-6 Luna (OpenAI) extracts findings, proposes diagnoses and writes the summaries; Gemini 3.5 Flash-Lite (Google) proposes diagnoses; OpenAI embeddings match findings to HPO terms; gpt-oss-120b (Groq) is used only for the contamination check; LightGBM is trained on published cases; Tavily provides the live evidence. All LLM calls go through Bifrost.
+- **To build it:** the project was developed with Claude (Anthropic) as an AI pair programmer, used for design discussions, writing and reviewing code and documentation, and running checks. The author chose the problem and the approach, reviewed the code, ran every experiment on his machine, and is responsible for the result.
 
 ## Data sources and attribution
 
