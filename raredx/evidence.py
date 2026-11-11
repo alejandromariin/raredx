@@ -1,11 +1,11 @@
 """Step 7: live evidence from the web with Tavily, for the top candidates.
 
 The ontology files are updated every few months; this finds what is new or practical
-right now. For each of the top 3 candidates, two searches (Tavily, ~1 credit each):
+right now. For each of the top 3 candidates, three searches (Tavily, ~1 credit each):
   - LITERATURE: case reports and articles (PubMed, PMC) and the clinical summary
     (GeneReviews). First the last year; if nothing, any date.
-  - TRIALS AND SUPPORT: open clinical trials (ClinicalTrials.gov) and patient
-    information and organisations (Orphanet, NORD, GARD).
+  - TRIALS: clinical trials (ClinicalTrials.gov).
+  - SUPPORT: patient information and organisations (Orphanet, NORD, GARD).
 Example result: {"kind": "trials", "title": "Trofinetide for Rett syndrome ...",
                  "url": "https://clinicaltrials.gov/...", "site": "clinicaltrials.gov", "snippet": "..."}
 
@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -26,14 +27,26 @@ from urllib.parse import urlparse
 from .llm import CACHE_DB, _LockedDB, _load_env
 
 TAVILY_URL = "https://api.tavily.com/search"
-SEARCHES = {
-    "literature": ["pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov"],
-    "trials": ["clinicaltrials.gov", "orpha.net", "rarediseases.org", "rarediseases.info.nih.gov"],
+SEARCHES = {   # kind -> (sites, results)
+    "literature": (["pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov"], 3),
+    "trials": (["clinicaltrials.gov"], 2),
+    "support": (["orpha.net", "rarediseases.org", "rarediseases.info.nih.gov"], 2),
 }
 QUERIES = {
     "literature": "{name} case report clinical features",
-    "trials": "{name} clinical trial patient information",
+    "trials": "{name} clinical trial",
+    "support": "{name} patient information support organization",
 }
+
+
+def _clean_title(title: str) -> str:
+    """'Study Details | NCT03758924 | Study of X | ClinicalTrials.gov' -> 'Study of X (NCT03758924)';
+    'MECP2 Disorders - GeneReviews® - NCBI Bookshelf' -> 'MECP2 Disorders · GeneReviews'."""
+    m = re.match(r"^Study Details \| (NCT\d+) \| (.+?) \| ClinicalTrials\.gov$", title)
+    if m:
+        return f"{m.group(2)} ({m.group(1)})"
+    title = re.sub(r"\s+-\s+GeneReviews®?\s+-\s+NCBI Bookshelf$", " · GeneReviews", title)
+    return re.sub(r"\s+[-|]\s+(PubMed|PMC|NCBI)$", "", title)
 
 
 class Evidence:
@@ -50,8 +63,8 @@ class Evidence:
     def available(self) -> bool:
         return bool(self.key)
 
-    def search(self, query: str, domains: list[str], time_range: str | None = None) -> list[dict]:
-        body = {"query": query, "search_depth": "basic", "max_results": self.max_results,
+    def search(self, query: str, domains: list[str], time_range: str | None = None, max_results: int | None = None) -> list[dict]:
+        body = {"query": query, "search_depth": "basic", "max_results": max_results or self.max_results,
                 "include_domains": domains, "include_answer": False}
         if time_range:
             body["time_range"] = time_range
@@ -72,13 +85,15 @@ class Evidence:
 
     def _for(self, name: str, kind: str) -> list[dict]:
         query = QUERIES[kind].format(name=name)
-        found = self.search(query, SEARCHES[kind], time_range="year" if kind == "literature" else None)
+        sites, n = SEARCHES[kind]
+        found = self.search(query, sites, time_range="year" if kind == "literature" else None, max_results=n)
         if not found and kind == "literature":          # nothing in the last year: any date
-            found = self.search(query, SEARCHES[kind])
+            found = self.search(query, sites, max_results=n)
         out = []
         for r in found:
-            snippet = " ".join(str(r.get("content", "")).split())
-            out.append({"kind": kind, "title": str(r.get("title", "")).strip() or r.get("url", ""),
+            # trial pages give boilerplate text instead of a useful summary: keep only the title
+            snippet = "" if kind == "trials" else " ".join(str(r.get("content", "")).split())
+            out.append({"kind": kind, "title": _clean_title(str(r.get("title", "")).strip()) or r.get("url", ""),
                         "url": r.get("url", ""), "site": urlparse(r.get("url", "")).netloc.removeprefix("www."),
                         "snippet": snippet[:220] + ("…" if len(snippet) > 220 else ""),
                         "date": r.get("published_date")})

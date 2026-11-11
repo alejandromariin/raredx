@@ -61,4 +61,4 @@ phenotype:
 evidence:
   # Live web evidence with Tavily, shown to the doctor (never used for the ranking)
   top: 3          # candidates searched
-  max_results: 3  # results per search (2 searches per candidate: literature, trials and support)
+  max_results: 3  # default results per search (literature 3, trials 2, support 2: see evidence.py)

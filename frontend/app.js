@@ -468,7 +468,7 @@ function whyPanel(disease) {
     </div>`;
 }
 
-const EVIDENCE_GROUPS = [["literature", "Recent literature"], ["trials", "Trials and patient support"]];
+const EVIDENCE_GROUPS = [["literature", "Recent literature"], ["trials", "Clinical trials"], ["support", "Patient information and support"]];
 function evidenceBlock(disease) {
   if (!state.evidenceOn) return "";
   const rank = state.ranking.findIndex((r) => r.disease === disease);
@@ -481,7 +481,7 @@ function evidenceBlock(disease) {
   }
   const groups = EVIDENCE_GROUPS.map(([kind, title]) => {
     const items = found.filter((r) => r.kind === kind);
-    return `<div class="ev-group"><h5>${title}</h5>${items.length ? `<ul>${items.map((r) => `<li>
+    return `<div class="ev-group ev-${kind}"><h5>${title}</h5>${items.length ? `<ul>${items.map((r) => `<li>
           <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}${ICON_EXT}</a>
           <span class="ev-site">${esc(r.site)}${r.date ? ` · ${esc(String(r.date).slice(0, 10))}` : ""}</span>
           ${r.snippet ? `<p>${esc(r.snippet)}</p>` : ""}</li>`).join("")}</ul>` : '<span class="fchip none">nothing found</span>'}</div>`;
