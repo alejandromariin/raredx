@@ -32,3 +32,6 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Files the Claude app saves when sharing them in the chat
+Claude outputs/

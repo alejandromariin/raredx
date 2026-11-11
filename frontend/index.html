@@ -4,99 +4,99 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>raredx · differential diagnosis support</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f5a57'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='17' font-weight='700' text-anchor='middle' fill='white'%3Erx%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="masthead">
-    <div class="wrap masthead-row">
-      <div>
-        <span class="brand">raredx</span>
-        <span class="tagline">Differential diagnosis support for rare diseases</span>
-      </div>
-      <span class="badge-research">Research prototype · not for clinical use</span>
+  <header class="topbar">
+    <div class="wrap topbar-row">
+      <a class="brand" href="/" aria-label="raredx home"><span class="brand-mark">rx</span>raredx</a>
+      <span class="pill pill-warn">Research prototype · not for clinical use</span>
     </div>
   </header>
 
   <main class="wrap">
-    <ol class="steps" id="steps">
-      <li data-step="case">Case</li>
-      <li data-step="review">Review</li>
-      <li data-step="result">Differential</li>
+    <ol class="stepper" id="steps" aria-label="Progress">
+      <li data-step="case"><span class="dot">1</span><span class="label">Case</span></li>
+      <li data-step="review"><span class="dot">2</span><span class="label">Review</span></li>
+      <li data-step="result"><span class="dot">3</span><span class="label">Differential</span></li>
     </ol>
 
     <!-- 1. CASE -->
     <section id="view-case" class="view">
       <h1>Describe the patient</h1>
-      <p class="lede">Write the clinical picture as you would in a referral letter, in any language. Mention the findings that are absent, too.</p>
+      <p class="lede">Write the clinical picture as you would in a referral letter, in any language. Mention absent findings too.</p>
 
-      <label class="field-label" for="note">Clinical note</label>
-      <textarea id="note" rows="8" placeholder="e.g. 3-year-old girl who does not walk yet, with frequent seizures, a small head for her age and low-set ears. Hearing and heart are normal."></textarea>
-
-      <div class="field-row">
-        <div>
-          <label class="field-label" for="age">Age (years)</label>
-          <input id="age" type="number" min="0" max="120" step="0.5" inputmode="decimal">
-        </div>
-        <div>
-          <label class="field-label" for="sex">Sex</label>
-          <select id="sex">
-            <option value="">Not stated</option>
-            <option value="female">Female</option>
-            <option value="male">Male</option>
-          </select>
+      <div class="composer">
+        <label class="sr-only" for="note">Clinical note</label>
+        <textarea id="note" rows="6" placeholder="e.g. 3-year-old girl who does not walk yet, with frequent seizures, a small head for her age and low-set ears. Hearing and heart are normal."></textarea>
+        <div class="composer-bar">
+          <div class="composer-fields">
+            <label class="mini-field"><span>Age</span><input id="age" type="number" min="0" max="120" step="0.5" inputmode="decimal" placeholder="—"><span class="unit">y</span></label>
+            <div class="segmented" role="radiogroup" aria-label="Sex">
+              <input type="radio" name="sex" id="sex-f" value="female"><label for="sex-f">Female</label>
+              <input type="radio" name="sex" id="sex-m" value="male"><label for="sex-m">Male</label>
+              <input type="radio" name="sex" id="sex-n" value="" checked><label for="sex-n">Not stated</label>
+            </div>
+          </div>
+          <div class="composer-send">
+            <span class="kbd-hint"><kbd>Ctrl</kbd><kbd>↵</kbd></span>
+            <button id="btn-extract" class="btn btn-primary" type="button">Extract symptoms <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
         </div>
       </div>
+      <p id="extract-status" class="status" aria-live="polite"></p>
 
       <div class="examples">
-        <span class="muted">Illustrative cases:</span>
-        <button type="button" class="link" data-example="0">Seizures and microcephaly</button>
-        <button type="button" class="link" data-example="1">Tall, long fingers, lens dislocation</button>
-        <button type="button" class="link" data-example="2">Regression and high lactate</button>
-      </div>
-
-      <div class="actions">
-        <button id="btn-extract" class="primary" type="button">Extract symptoms</button>
-        <span id="extract-status" class="status" aria-live="polite"></span>
+        <span class="muted small">Try an illustrative case</span>
+        <div class="chips">
+          <button type="button" class="chip" data-example="0">Seizures and microcephaly</button>
+          <button type="button" class="chip" data-example="1">Tall, long fingers, lens dislocation</button>
+          <button type="button" class="chip" data-example="2">Regression and high lactate</button>
+        </div>
       </div>
     </section>
 
     <!-- 2. REVIEW -->
     <section id="view-review" class="view" hidden>
-      <h1>Review the symptoms</h1>
-      <p class="lede">These are the findings read from the note, coded with the Human Phenotype Ontology. Correct anything before the differential is computed.</p>
+      <h1>Review the findings</h1>
+      <p class="lede">Read from the note and coded with the Human Phenotype Ontology. Correct anything before the differential is computed.</p>
 
       <div class="review-grid">
-        <div>
-          <h2 class="section-label">Note</h2>
+        <div class="card note-card">
+          <div class="card-head"><span>Note</span></div>
           <div id="note-view" class="note-view"></div>
+          <div class="legend small muted"><span class="sw sw-present"></span>present <span class="sw sw-absent"></span>absent</div>
         </div>
-        <div>
-          <h2 class="section-label">Present <span id="count-present" class="count"></span></h2>
+
+        <div class="card">
+          <div class="card-head"><span>Present</span><span id="count-present" class="count"></span></div>
           <ul id="list-present" class="terms"></ul>
-          <h2 class="section-label">Absent <span id="count-absent" class="count"></span></h2>
+          <div class="card-head card-head-sub"><span>Absent</span><span id="count-absent" class="count"></span></div>
           <ul id="list-absent" class="terms"></ul>
           <div id="unmatched-block" hidden>
-            <h2 class="section-label">Not coded</h2>
+            <div class="card-head card-head-sub"><span>Not coded</span></div>
             <ul id="list-unmatched" class="terms"></ul>
           </div>
-
           <div class="add-term">
-            <label class="field-label" for="term-search">Add a finding</label>
+            <label class="sr-only" for="term-search">Add a finding</label>
             <div class="search-box">
-              <input id="term-search" type="text" autocomplete="off" placeholder="Search HPO, e.g. long fingers">
-              <ul id="search-results" class="search-results" hidden></ul>
+              <svg class="icon search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input id="term-search" type="text" autocomplete="off" placeholder="Add a finding, e.g. long fingers">
+              <ul id="search-results" class="search-results" role="listbox" hidden></ul>
             </div>
           </div>
         </div>
       </div>
 
       <div class="actions">
-        <button id="btn-back" type="button" class="secondary">Edit note</button>
-        <button id="btn-run" class="primary" type="button">Compute differential</button>
-        <span class="status muted" id="run-hint"></span>
+        <button id="btn-back" type="button" class="btn btn-ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>Edit note</button>
+        <span class="spacer"></span>
+        <span class="small muted" id="run-hint"></span>
+        <button id="btn-run" class="btn btn-primary" type="button">Compute differential <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </div>
     </section>
 
@@ -104,22 +104,34 @@
     <section id="view-result" class="view" hidden>
       <div class="result-head">
         <h1>Differential</h1>
-        <span id="result-meta" class="muted mono"></span>
+        <span id="result-meta" class="pill"></span>
       </div>
-      <ol id="progress" class="progress"></ol>
-      <div id="warnings"></div>
-      <ol id="ranking" class="ranking"></ol>
-      <p id="result-foot" class="foot muted" hidden>
-        Bars show the relative support for each candidate among these ten, not a probability.
-        Ranking learned from 1,000 published cases; see the README for its evaluation.
-      </p>
+
+      <div class="result-grid">
+        <aside class="card progress-card">
+          <div class="card-head"><span>Sources</span></div>
+          <ol id="progress" class="timeline"></ol>
+        </aside>
+        <div>
+          <div id="warnings"></div>
+          <div class="card ranking-card">
+            <ol id="ranking" class="ranking"></ol>
+          </div>
+          <p id="result-foot" class="foot small muted" hidden>
+            Bars show the relative support for each candidate among these ten, not a probability.
+            The ranking is learned from 1,000 published cases; its evaluation is in the README.
+          </p>
+        </div>
+      </div>
+
       <div class="actions">
-        <button id="btn-edit" type="button" class="secondary">Change symptoms</button>
-        <button id="btn-new" type="button" class="secondary">New case</button>
+        <button id="btn-edit" type="button" class="btn btn-ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>Change findings</button>
+        <span class="spacer"></span>
+        <button id="btn-new" type="button" class="btn btn-secondary">New case</button>
       </div>
     </section>
 
-    <p id="error" class="error" role="alert" hidden></p>
+    <p id="error" class="alert" role="alert" hidden></p>
   </main>
 
   <footer class="wrap disclaimer">
