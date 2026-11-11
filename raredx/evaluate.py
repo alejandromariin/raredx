@@ -603,10 +603,96 @@ def train_fusion() -> dict:
     return {"saved": str(path.relative_to(ROOT)), "learner": learner.name, "llm_models": cfg["models"],
             "train_cases": len(train["groups"])}
 
+# =============================================================================
+# FINAL EVALUATION ON TEST (RE5, RE6): the 500 test cases were never used to build
+# or tune anything. The fusion evaluated is the one the app uses (models/fusion.pkl).
+# Paired comparison: every method is scored on the SAME patients, so we compare them
+# patient by patient. Example: fusion right and Luna wrong on case 12 -> +1 for the
+# fusion. Bootstrap over patients gives a 95 % interval for the difference; if it
+# does not include 0, the difference is unlikely to be chance.
+# =============================================================================
+
+def _paired(a: list, b: list, seed: int = 42, n_boot: int = 2000) -> dict:
+    """Difference a - b in top-1, top-10 and MRR, patient by patient, with 95 % CI."""
+    import numpy as np
+    ra = np.array([x if x is not None else np.inf for x in a], dtype=float)
+    rb = np.array([x if x is not None else np.inf for x in b], dtype=float)
+    per_case = {"top1": (ra <= 1).astype(float) - (rb <= 1), "top10": (ra <= 10).astype(float) - (rb <= 10),
+                "mrr": 1 / ra - 1 / rb}
+    rng = np.random.default_rng(seed)
+    idx = [rng.integers(0, len(ra), len(ra)) for _ in range(n_boot)]
+    out = {}
+    for k, d in per_case.items():
+        boots = np.array([d[i].mean() for i in idx])
+        lo, hi = np.percentile(boots, [2.5, 97.5])
+        # two-sided bootstrap p-value: how often the resampled difference crosses 0
+        p = min(1.0, 2 * min((boots <= 0).mean(), (boots >= 0).mean()))
+        out[k] = {"difference": round(float(d.mean()), 3), "ci95": [round(float(lo), 3), round(float(hi), 3)],
+                  # with 2,000 resamples the smallest p we can tell apart is about 0.001
+                  "p_value": round(float(p), 3) if p >= 0.001 else "<0.001"}
+    return out
+
+
+def eval_test() -> dict:
+    import numpy as np
+    from .ensemble import Ensemble
+    from .fusion import NOT_LISTED, FeatureBuilder, LogRegFusion, load_fusion, ranks_from_scores, rrf_scores
+    from .ranker import OntologyRanker
+    saved = load_fusion()
+    models = saved["llm_models"]
+    ranker = OntologyRanker()
+    fb = FeatureBuilder(ranker, Ensemble(onto=ranker.onto), models, load_settings()["fusion"]["ranker_top"])
+    if fb.columns != saved["columns"]:
+        raise RuntimeError("models/fusion.pkl does not match the current columns: run `make train` first")
+    cols = fb.columns
+    print("building tables (test)...", flush=True)
+    test = fb.dataset(sample_cases_of("test"))
+
+    ranks = {"ranker_alone": ranks_from_scores(test, test["X"][:, cols.index("ranker_score")])}
+    for m in models:
+        pos = test["X"][:, cols.index(f"{m}:pos")]
+        ranks[f"llm_alone:{m}"] = ranks_from_scores(test, np.where(pos < NOT_LISTED, -pos, -np.inf))
+    ranks["rrf_no_learning"] = ranks_from_scores(test, rrf_scores(test, cols))
+    print("building tables (train) for the logistic regression reference...", flush=True)
+    train = fb.dataset(sample_cases_of("train"))
+    ranks["fusion:logistic_regression"] = ranks_from_scores(test, LogRegFusion().fit(train).score(test))
+    final = f"fusion:{saved['learner']} (models/fusion.pkl)"
+    ranks[final] = ranks_from_scores(test, saved["model"].score(test))
+
+    covered = sum(g in names for g, names in zip(test["gold"], test["candidates"]))
+    best_single = max((k for k in ranks if k.startswith(("ranker_alone", "llm_alone"))),
+                      key=lambda k: np.mean([1 / r if r else 0 for r in ranks[k]]))
+    result = {
+        "test_cases": len(test["groups"]), "llm_models": models, "fusion_trained_on": f"{saved['train_cases']} training cases",
+        "test_correct_among_candidates": round(covered / len(test["groups"]), 3),
+        "results": {k: metrics(v) for k, v in ranks.items()},
+        "best_single_source": best_single,
+        "paired_fusion_vs": {k: _paired(ranks[final], v) for k, v in ranks.items() if k != final},
+    }
+    (RESULTS / "test.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def eval_all() -> None:
+    """Every evaluation, in order, from the response caches (RE8: one command).
+    Runs without new LLM calls when the caches are complete; `timing` is left out
+    because it makes real calls on purpose."""
+    cfg = load_settings()
+    steps = [("ranker val", lambda: eval_ranker("val")), ("ranker test", lambda: eval_ranker("test"))]
+    for m in cfg["fusion"]["models"]:
+        for split in SPLITS:
+            steps.append((f"llm {m} {split}", lambda m=m, split=split: eval_llm(m, split)))
+    steps += [("fusion (validation)", eval_fusion), ("ablation", eval_ablation), ("final test", eval_test),
+              ("contamination", eval_contamination), ("extraction", lambda: eval_extraction("val", 100))]
+    for name, run in steps:
+        print(f"\n=== {name} ===", flush=True)
+        run()
+    print("\nAll results written to results/.")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion", "test", "all"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`/`contamination`: a random subset of N cases/pairs")
@@ -625,6 +711,10 @@ def main() -> None:
         print(json.dumps(eval_timing(args.limit or 10), indent=2))
     elif args.command == "contamination":
         print(json.dumps(eval_contamination(args.limit), indent=2))
+    elif args.command == "test":
+        print(json.dumps(eval_test(), indent=2))
+    elif args.command == "all":
+        eval_all()
     elif args.command == "train-fusion":
         print(json.dumps(train_fusion(), indent=2))
     elif args.command == "extraction":

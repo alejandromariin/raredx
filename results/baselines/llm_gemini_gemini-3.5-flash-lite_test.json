@@ -1,0 +1,48 @@
+{
+  "model": "gemini/gemini-3.5-flash-lite",
+  "split": "test",
+  "metrics": {
+    "cases": 500,
+    "correct_not_ranked": 378,
+    "top1": {
+      "value": 0.148,
+      "ci95": [
+        0.118,
+        0.18
+      ]
+    },
+    "top5": {
+      "value": 0.228,
+      "ci95": [
+        0.192,
+        0.264
+      ]
+    },
+    "top10": {
+      "value": 0.244,
+      "ci95": [
+        0.208,
+        0.28
+      ]
+    },
+    "mrr": {
+      "value": 0.181,
+      "ci95": [
+        0.15,
+        0.212
+      ]
+    }
+  },
+  "not_in_top10": 378,
+  "name_translation": {
+    "exact": 431,
+    "omim": 3406,
+    "none": 410,
+    "gene": 413,
+    "official": 214,
+    "loose": 103,
+    "prefix": 3
+  },
+  "usd_this_run": 0.0,
+  "cached_calls": 473
+}

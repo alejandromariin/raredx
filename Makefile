@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: data split gateway gateway-stop train api eval app
+.PHONY: data split gateway gateway-stop train api eval test app
 
 data:   ## Download and process all datasets
 	$(PYTHON) -m raredx.data
@@ -20,8 +20,11 @@ train:  ## Train the fusion model on the training sample -> models/fusion.pkl
 api:    ## Start the API on http://localhost:8000 (docs at /docs); needs Bifrost running
 	$(PYTHON) -m uvicorn raredx.api:app --port 8000
 
-eval:   ## Run the full evaluation and write results/
-	@echo "TODO: $(PYTHON) -m raredx.evaluate"
+eval:   ## Run every evaluation from the caches and write results/ (no new LLM calls once cached)
+	$(PYTHON) -m raredx.evaluate all
+
+test:   ## Final evaluation on the 500 test cases -> results/test.json
+	$(PYTHON) -m raredx.evaluate test
 
 app:    ## Start Bifrost, backend and frontend
 	@echo "TODO: docker compose up"
