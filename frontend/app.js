@@ -391,7 +391,9 @@ async function init() {
   $("btn-back").addEventListener("click", () => goTo("case"));
   $("btn-run").addEventListener("click", runDifferential);
   $("btn-edit").addEventListener("click", () => { renderReview(); goTo("review"); });
-  $("btn-new").addEventListener("click", () => { $("note").value = ""; $("age").value = ""; $("sex-n").checked = true; state.caseId = null; state.terms = []; state.unmatched = []; goTo("case"); });
+  const newCase = () => { $("note").value = ""; $("age").value = ""; $("sex-n").checked = true; state.caseId = null; state.finished = false; state.terms = []; state.unmatched = []; goTo("case"); $("note").focus(); };
+  $("btn-new").addEventListener("click", newCase);
+  $("btn-new-top").addEventListener("click", newCase);
   goTo("case");
 }
 init();
