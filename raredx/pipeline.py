@@ -26,6 +26,7 @@ import argparse
 import operator
 import time
 import uuid
+from pathlib import Path
 from typing import Annotated, TypedDict
 
 import numpy as np
@@ -36,6 +37,7 @@ from .llm import LLMClient
 from .phenotype import PhenotypeExtractor
 from .ranker import OntologyRanker
 
+ROOT = Path(__file__).resolve().parents[1]
 TOP_K = 10    # diseases shown in the result
 
 
@@ -179,13 +181,14 @@ class Pipeline:
 
     # ------------------------------------------------------------------ helpers for the API / CLI
     def start(self, note: str | None = None, hpo: list[str] | None = None, sex: str | None = None,
-              age_years: float | None = None, thread_id: str | None = None):
+              age_years: float | None = None, thread_id: str | None = None, hpo_excluded: list[str] | None = None):
         """Run until the review pause. Yields (thread_id, step name, update) as each step finishes."""
         thread_id = thread_id or uuid.uuid4().hex
         state: State = {"note": note or "", "sex": sex, "age": f"P{int(age_years)}Y" if age_years is not None else None,
                         "llm": {}, "failed": [], "timings": {}, "usd": 0.0}
         if hpo:
             state["hpo_present"] = [self.onto.canonical(t) for t in hpo]
+            state["hpo_excluded"] = [self.onto.canonical(t) for t in hpo_excluded or []]
         for update in self.graph.stream(state, {"configurable": {"thread_id": thread_id}}, stream_mode="updates"):
             for step, value in update.items():
                 yield thread_id, step, value

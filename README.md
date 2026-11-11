@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction works (see results); the web UI is next. Results below are on the validation sample; the final numbers on the held-out test sample are pending.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, the API and a first version of the web interface work; explanations per candidate are next. Results below are on the validation sample; the final numbers on the held-out test sample are pending.
 
 ## How it works
 
@@ -116,6 +116,14 @@ python3 -m raredx.evaluate contamination                               # older v
 python3 -m raredx.evaluate extraction --limit 100                      # note -> symptoms round trip
 ```
 
+Start the web interface (with Bifrost running), then open http://localhost:8000:
+
+```bash
+make api                        # API + interface; interactive API docs at http://localhost:8000/docs
+```
+
+The interface has three steps: write the clinical note, review the coded symptoms (each one linked to the words it came from, with alternatives and an HPO search to add findings), and the differential, with live progress and where each source ranked each disease.
+
 Run the whole flow on a clinical note (LangGraph: extraction -> doctor review -> ranker and LLMs in parallel -> fusion):
 
 ```bash
@@ -141,6 +149,8 @@ raredx/
   ensemble.py   LLM prompts, answer parsing
   fusion.py     candidate tables and fusion models
   pipeline.py   the full flow as a LangGraph graph, with a pause for the doctor's review
+  api.py        FastAPI: cases, review, progress events, HPO search; serves the interface
+frontend/       the web interface (plain HTML, CSS and JavaScript, no build step)
   evaluate.py   splits, metrics and every evaluation command
 models/         trained fusion model (committed, so the app needs no training)
 results/        versioned evaluation results and case samples

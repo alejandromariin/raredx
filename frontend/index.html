@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>raredx · differential diagnosis support</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap masthead-row">
+      <div>
+        <span class="brand">raredx</span>
+        <span class="tagline">Differential diagnosis support for rare diseases</span>
+      </div>
+      <span class="badge-research">Research prototype · not for clinical use</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <ol class="steps" id="steps">
+      <li data-step="case">Case</li>
+      <li data-step="review">Review</li>
+      <li data-step="result">Differential</li>
+    </ol>
+
+    <!-- 1. CASE -->
+    <section id="view-case" class="view">
+      <h1>Describe the patient</h1>
+      <p class="lede">Write the clinical picture as you would in a referral letter, in any language. Mention the findings that are absent, too.</p>
+
+      <label class="field-label" for="note">Clinical note</label>
+      <textarea id="note" rows="8" placeholder="e.g. 3-year-old girl who does not walk yet, with frequent seizures, a small head for her age and low-set ears. Hearing and heart are normal."></textarea>
+
+      <div class="field-row">
+        <div>
+          <label class="field-label" for="age">Age (years)</label>
+          <input id="age" type="number" min="0" max="120" step="0.5" inputmode="decimal">
+        </div>
+        <div>
+          <label class="field-label" for="sex">Sex</label>
+          <select id="sex">
+            <option value="">Not stated</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="examples">
+        <span class="muted">Illustrative cases:</span>
+        <button type="button" class="link" data-example="0">Seizures and microcephaly</button>
+        <button type="button" class="link" data-example="1">Tall, long fingers, lens dislocation</button>
+        <button type="button" class="link" data-example="2">Regression and high lactate</button>
+      </div>
+
+      <div class="actions">
+        <button id="btn-extract" class="primary" type="button">Extract symptoms</button>
+        <span id="extract-status" class="status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <!-- 2. REVIEW -->
+    <section id="view-review" class="view" hidden>
+      <h1>Review the symptoms</h1>
+      <p class="lede">These are the findings read from the note, coded with the Human Phenotype Ontology. Correct anything before the differential is computed.</p>
+
+      <div class="review-grid">
+        <div>
+          <h2 class="section-label">Note</h2>
+          <div id="note-view" class="note-view"></div>
+        </div>
+        <div>
+          <h2 class="section-label">Present <span id="count-present" class="count"></span></h2>
+          <ul id="list-present" class="terms"></ul>
+          <h2 class="section-label">Absent <span id="count-absent" class="count"></span></h2>
+          <ul id="list-absent" class="terms"></ul>
+          <div id="unmatched-block" hidden>
+            <h2 class="section-label">Not coded</h2>
+            <ul id="list-unmatched" class="terms"></ul>
+          </div>
+
+          <div class="add-term">
+            <label class="field-label" for="term-search">Add a finding</label>
+            <div class="search-box">
+              <input id="term-search" type="text" autocomplete="off" placeholder="Search HPO, e.g. long fingers">
+              <ul id="search-results" class="search-results" hidden></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-back" type="button" class="secondary">Edit note</button>
+        <button id="btn-run" class="primary" type="button">Compute differential</button>
+        <span class="status muted" id="run-hint"></span>
+      </div>
+    </section>
+
+    <!-- 3. RESULT -->
+    <section id="view-result" class="view" hidden>
+      <div class="result-head">
+        <h1>Differential</h1>
+        <span id="result-meta" class="muted mono"></span>
+      </div>
+      <ol id="progress" class="progress"></ol>
+      <div id="warnings"></div>
+      <ol id="ranking" class="ranking"></ol>
+      <p id="result-foot" class="foot muted" hidden>
+        Bars show the relative support for each candidate among these ten, not a probability.
+        Ranking learned from 1,000 published cases; see the README for its evaluation.
+      </p>
+      <div class="actions">
+        <button id="btn-edit" type="button" class="secondary">Change symptoms</button>
+        <button id="btn-new" type="button" class="secondary">New case</button>
+      </div>
+    </section>
+
+    <p id="error" class="error" role="alert" hidden></p>
+  </main>
+
+  <footer class="wrap disclaimer">
+    raredx suggests diseases to consider; it does not diagnose. Every suggestion must be checked by a qualified clinician.
+    Free-text notes are sent to third-party language models: do not enter identifying patient data.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

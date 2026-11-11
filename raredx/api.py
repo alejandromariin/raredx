@@ -1,6 +1,7 @@
 """HTTP API for the interface: the bridge between the LangGraph flow and the web page.
 
 Start it (with Bifrost running):  make api   (= uvicorn raredx.api:app --port 8000)
+Interface:                        http://localhost:8000
 Interactive docs:                 http://localhost:8000/docs
 
 Calls, in the order the interface makes them:
@@ -26,9 +27,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .pipeline import Pipeline, _node_name
+from .pipeline import ROOT, Pipeline, _node_name
 
 P: Pipeline | None = None      # loaded once when the server starts (~5-20 s)
 
@@ -50,6 +52,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 class NewCase(BaseModel):
     note: str | None = Field(None, description="clinical note in free text")
     hpo: list[str] | None = Field(None, description="symptoms as HPO codes, instead of a note")
+    hpo_excluded: list[str] | None = Field(None, description="absent symptoms as HPO codes (with `hpo`)")
     sex: str | None = Field(None, pattern="^(female|male)$")
     age_years: float | None = Field(None, ge=0, le=120)
 
@@ -96,7 +99,7 @@ def new_case(body: NewCase) -> dict:
     if not (body.note and body.note.strip()) and not body.hpo:
         raise HTTPException(422, "give a clinical note or a list of HPO codes")
     case_id = None
-    for case_id, _, _ in P.start(body.note, body.hpo, body.sex, body.age_years):
+    for case_id, _, _ in P.start(body.note, body.hpo, body.sex, body.age_years, hpo_excluded=body.hpo_excluded):
         pass                                   # runs extract, then stops at the review pause
     s = _state(case_id)
     return {"case_id": case_id, "features": s.get("features", []),
@@ -170,3 +173,8 @@ def hpo_search(q: str, limit: int = 10) -> list[dict]:
             hits[term] = (key, text)
     best = sorted(hits.items(), key=lambda kv: kv[1][0])[: max(1, min(limit, 50))]
     return [{"hpo": term, "name": P.onto.names.get(term, term), "matched": text} for term, (_, text) in best]
+
+
+# The interface (frontend/: index.html, styles.css, app.js) at http://localhost:8000/
+# Mounted last, so the API routes above take precedence.
+app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True), name="frontend")
