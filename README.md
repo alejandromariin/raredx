@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, the API and a first version of the web interface work; explanations per candidate are next. Results below are on the validation sample; the final numbers on the held-out test sample are pending.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, explanations per candidate, the API and the web interface work; live evidence with Tavily is next. Results below are on the validation sample; the final numbers on the held-out test sample are pending.
 
 ## How it works
 
@@ -30,6 +30,8 @@ Ranked differential diagnosis
 - **Ontology ranker.** Compares the patient's symptoms with each disease's symptoms in the Human Phenotype Ontology annotations. Rare symptoms count more than common ones (information content), and related symptoms count partially through the HPO hierarchy. No LLM involved.
 - **LLM ensemble.** Each LLM receives the symptoms by readable name, plus age and sex, and returns its top 10 as JSON. Disease names are translated to OMIM codes using OMIM names, Orphanet synonyms and gene symbols (raredx/diseases.py); OMIM numbers proposed by the LLM are verified, not trusted.
 - **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence...). A LightGBM ranking model (lambdarank) trained on 1,000 published cases learns how much to trust each source.
+- **Explanations.** For each of the top 5 candidates, from the ontology files only (instant, nothing invented): the patient's findings it explains, absent findings that argue against it, frequent findings of the disease not mentioned yet, and the genes to test. One LLM call then writes a sentence per candidate using only those facts.
+- **Most useful next findings.** Among the findings of the top candidates, the ones that best separate them (expected information gain, from HPO annotation frequencies). The doctor can mark one as present or absent and the differential is recomputed.
 - **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (raredx/llm.py), with an exact response cache, a hard spending limit and per-provider rate limiting for free tiers.
 - **Models.** Ensemble: GPT-6 Luna (OpenAI, about 0.0005 $ per patient) and Gemini 3.5 Flash-Lite (Google AI Studio free tier). Contamination check: gpt-oss-120b (Groq free tier). Larger models were left out to keep the whole project within a small budget.
 - **Privacy note.** Free tiers may use the data sent to them to improve their models. That is fine for this evaluation, which only uses already-published cases, but real patient data would require paid plans or self-hosted models.
@@ -148,6 +150,7 @@ raredx/
   llm.py        Bifrost client: exact cache and spending limit
   ensemble.py   LLM prompts, answer parsing
   fusion.py     candidate tables and fusion models
+  explain.py    explanations per candidate and most useful next findings
   pipeline.py   the full flow as a LangGraph graph, with a pause for the doctor's review
   api.py        FastAPI: cases, review, progress events, HPO search; serves the interface
 frontend/       the web interface (plain HTML, CSS and JavaScript, no build step)

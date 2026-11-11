@@ -1,7 +1,7 @@
 """The full flow, as a LangGraph graph. The demo app and the command line use it.
 
     note --> extract --> review --> ranker ----------+
-                         (pause)  \\-> llm (each LLM) --+--> fuse --> result
+                         (pause)  \\-> llm (each LLM) --+--> fuse --> explain --> summarize --> result
                                     (all at the same time)
 
 The STATE is the patient's file, shared by every step: each step reads what it needs
@@ -30,8 +30,10 @@ from pathlib import Path
 from typing import Annotated, TypedDict
 
 import numpy as np
+import yaml
 
 from .ensemble import Ensemble
+from .explain import Explainer
 from .fusion import FeatureBuilder, load_fusion
 from .llm import LLMClient
 from .phenotype import PhenotypeExtractor
@@ -39,6 +41,10 @@ from .ranker import OntologyRanker
 
 ROOT = Path(__file__).resolve().parents[1]
 TOP_K = 10    # diseases shown in the result
+
+
+def load_settings() -> dict:
+    return yaml.safe_load((ROOT / "settings.yaml").read_text(encoding="utf-8"))
 
 
 def _merge(a: dict, b: dict) -> dict:
@@ -62,6 +68,9 @@ class State(TypedDict, total=False):
     usd: Annotated[float, operator.add]
     # result
     ranking: list[dict]
+    explanations: dict              # {disease: fits / against / typical / genes}
+    next_findings: list             # findings that best separate the top candidates
+    summaries: dict                 # {disease: one or two sentences by the LLM}
 
 
 def _node_name(model: str) -> str:
@@ -92,6 +101,10 @@ class Pipeline:
         self.fusion, self.models = saved["model"], saved["llm_models"]
         self.features = FeatureBuilder(self.ranker, self.ensemble, self.models)
         took("fusion model + prevalence")
+        cfg = load_settings()["llm"]["utility"]
+        self.summary_model = f"{cfg['provider']}/{cfg['model']}"
+        self.explainer = Explainer(self.ranker, client, self.summary_model)
+        took("explanations (annotation frequencies, genes)")
         if self.features.columns != saved["columns"]:
             raise RuntimeError("models/fusion.pkl was trained with other columns: retrain it with `make train`")
         self.graph = self._build_graph()
@@ -154,6 +167,22 @@ class Pipeline:
             })
         return {"ranking": ranking, "timings": {"fuse": round(time.perf_counter() - t, 3)}}
 
+    def explain(self, state: State) -> dict:
+        t = time.perf_counter()
+        out = self.explainer.explain(state["ranking"], state["hpo_present"], state.get("hpo_excluded", []))
+        return {**out, "timings": {"explain": round(time.perf_counter() - t, 3)}}
+
+    def summarize(self, state: State) -> dict:
+        t = time.perf_counter()
+        try:
+            out = self.explainer.summarize(state["ranking"], state["explanations"],
+                                           state["hpo_present"], state.get("hpo_excluded", []))
+        except Exception as err:               # the summary is a bonus: never block the result
+            return {"summaries": {}, "failed": [f"{self.summary_model} (summary): {err}"[:300]],
+                    "timings": {"summarize": round(time.perf_counter() - t, 2)}}
+        return {"summaries": out["summaries"], "usd": out["usd"],
+                "timings": {"summarize": round(time.perf_counter() - t, 2)}}
+
     # ------------------------------------------------------------------ graph
     def _build_graph(self):
         from langgraph.graph import END, START, StateGraph
@@ -170,12 +199,16 @@ class Pipeline:
             g.add_node(_node_name(m), self.ask_llm(m))
             sources.append(_node_name(m))
         g.add_node("fuse", self.fuse)
+        g.add_node("explain", self.explain)
+        g.add_node("summarize", self.summarize)
         g.add_edge(START, "extract")
         g.add_edge("extract", "review")
         for s in sources:
             g.add_edge("review", s)          # all sources start at the same time...
         g.add_edge(sources, "fuse")          # ...and fuse waits for all of them
-        g.add_edge("fuse", END)
+        g.add_edge("fuse", "explain")              # explanations from the ontology (instant)
+        g.add_edge("explain", "summarize")         # one LLM call: a sentence per candidate
+        g.add_edge("summarize", END)
         # the checkpointer keeps each patient's state while the graph waits for the doctor
         return g.compile(checkpointer=Saver())
 
@@ -244,6 +277,10 @@ def main() -> None:
     for r in state["ranking"]:
         llm = "  ".join(f"{(r['llm_positions'][m] or '-'):>12}" for m in p.models)
         print(f"{r['rank']:>2}  {r['score']:>6.2f}  {r['ranker_position']:>6}  {llm}  {r['name']} ({r['disease']})")
+    if state.get("next_findings"):
+        print("\nmost useful next findings:", ", ".join(f["name"] for f in state["next_findings"]))
+    for d, text in state.get("summaries", {}).items():
+        print(f"\n{d}: {text}")
     if state.get("failed"):
         print("\nfailed:", *state["failed"], sep="\n  ")
     print(f"\ntotal {time.perf_counter() - t0:.1f} s, {state.get('usd', 0):.5f} $, steps: {state.get('timings')}")

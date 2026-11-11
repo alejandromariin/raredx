@@ -12,6 +12,10 @@ const EXAMPLES = [   // illustrative notes, not real patients
 
 const state = {
   models: [],            // LLMs used by the server, e.g. ["openai/gpt-6-luna", ...]
+  summaryModel: null,    // LLM that writes the one-sentence summaries
+  ranking: [],           // current differential
+  explain: null,         // {explanations, next_findings} for the top candidates
+  summaries: {},         // {disease: sentence}
   caseId: null,
   finished: false,       // the server case already has a result
   note: "", sex: "", age: null,
@@ -21,6 +25,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const ICON_X = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const ICON_DOWN = '<svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';
 const ICON_EXT = '<svg class="icon ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
 const sexValue = () => (document.querySelector('input[name="sex"]:checked') || {}).value || "";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -254,8 +259,11 @@ function onSearchKey(e) {
 function progressItems() {
   return [{ step: "ranker", label: "Ontology ranker" }]
     .concat(state.models.map((m) => ({ step: stepOf(m), label: modelLabel(m) })))
-    .concat([{ step: "fuse", label: "Learned fusion" }]);
+    .concat([{ step: "fuse", label: "Learned fusion" },
+             { step: "explain", label: "Explanations", via: "HPO annotations" },
+             { step: "summarize", label: "Summary", via: state.summaryModel ? modelLabel(state.summaryModel) : "LLM" }]);
 }
+const AFTER_SOURCES = ["fuse", "explain", "summarize"];   // run one after the other
 const stepOf = (model) => "llm_" + model.split("/").pop().replace(/[^a-z0-9]/gi, "_");
 
 function setStep(step, cls, text) {
@@ -300,7 +308,12 @@ async function runDifferential() {
   $("btn-run").disabled = true;
 
   const items = progressItems();
-  $("progress").innerHTML = items.map((p) => `<li data-step="${p.step}" class="${p.step === "fuse" ? "" : "running"}"><span class="mark"></span>${esc(p.label)}<span class="t">${p.step === "fuse" ? "waiting" : "working…"}</span></li>`).join("");
+  $("progress").innerHTML = items.map((p) => {
+    const later = AFTER_SOURCES.includes(p.step);
+    return `<li data-step="${p.step}" class="${later ? "" : "running"}"><span class="mark"></span>${esc(p.label)}${p.via ? `<span class="via">${esc(p.via)}</span>` : ""}<span class="t">${later ? "waiting" : "working…"}</span></li>`;
+  }).join("");
+  $("next-card").innerHTML = "";
+  state.ranking = []; state.explain = null; state.summaries = {};
   $("ranking").innerHTML = skeletonRows(6);
   $("warnings").innerHTML = "";
   $("result-meta").hidden = true;
@@ -318,9 +331,21 @@ async function runDifferential() {
       if (event === "step") {
         if (data.step !== "running") setStep(data.step, "done", data.seconds != null ? `${data.seconds} s` : "done");
         // all sources answered (or failed): the fusion is next
-        const sourcesLeft = [...document.querySelectorAll("#progress li.running")].filter((li) => li.dataset.step !== "fuse");
-        const fuse = document.querySelector('#progress li[data-step="fuse"]');
-        if (!sourcesLeft.length && fuse && fuse.className === "") setStep("fuse", "running", "working…");
+        // when the sources are done, the steps after them start one after the other
+        const sourcesLeft = [...document.querySelectorAll("#progress li.running")].filter((li) => !AFTER_SOURCES.includes(li.dataset.step));
+        if (!sourcesLeft.length) {
+          const next = AFTER_SOURCES.map((st) => document.querySelector(`#progress li[data-step="${st}"]`)).find((li) => li && li.className === "");
+          const busy = AFTER_SOURCES.some((st) => document.querySelector(`#progress li[data-step="${st}"]`)?.className === "running");
+          if (next && !busy) setStep(next.dataset.step, "running", "working…");
+        }
+      } else if (event === "ranking") {
+        renderRanking(data.ranking);
+      } else if (event === "explain") {
+        state.explain = data;
+        renderExplanations();
+      } else if (event === "summaries") {
+        state.summaries = data.summaries || {};
+        renderSummaries();
       } else if (event === "result") {
         state.finished = true;
         renderResult(data, (performance.now() - started) / 1000);
@@ -335,14 +360,15 @@ async function runDifferential() {
   }
 }
 
-function renderResult(data, seconds) {
+function renderRanking(ranking) {
   // bar = relative support among the ten shown (softmax of the fusion scores), not a probability
-  const scores = data.ranking.map((r) => r.score);
+  state.ranking = ranking;
+  const scores = ranking.map((r) => r.score);
   const top = Math.max(...scores);
   const w = scores.map((s) => Math.exp(s - top));
   const maxW = Math.max(...w);
 
-  $("ranking").innerHTML = data.ranking.map((r, i) => {
+  $("ranking").innerHTML = ranking.map((r, i) => {
     const omim = r.disease.startsWith("OMIM:") ? r.disease.slice(5) : null;
     const name = omim
       ? `<a href="https://omim.org/entry/${omim}" target="_blank" rel="noopener" title="Open in OMIM">${esc(r.name)}${ICON_EXT}</a>`
@@ -352,32 +378,142 @@ function renderResult(data, seconds) {
         ? `<span class="src">${esc(modelLabel(m))} <b>#${pos}</b></span>`
         : `<span class="src off">${esc(modelLabel(m))} —</span>`))
       .join("");
-    return `<li class="cand">
+    return `<li class="cand" data-d="${esc(r.disease)}">
         <span class="cand-rank">${r.rank}</span>
         <div class="cand-body">
           <div class="cand-name">${name}</div>
-          <div class="cand-meta"><span class="code">${esc(r.disease)}</span>${sources}</div>
+          <div class="cand-meta"><span class="code">${esc(r.disease)}</span>${sources}<span class="why-slot"></span></div>
         </div>
         <span class="bar" title="Relative support among these ten"><span style="width:${((w[i] / maxW) * 100).toFixed(1)}%"></span></span>
-        <div class="cand-details">${renderDetails(r)}</div>
+        <div class="cand-details" hidden></div>
       </li>`;
   }).join("");
+  if (state.explain) renderExplanations();
+}
 
-  for (const f of data.failed || []) setStep(stepOf(f.split(":")[0]), "failed", "no answer");
-  setStep("fuse", "done", undefined);
-  $("warnings").innerHTML = (data.failed || []).map((f) => `<p class="alert">${esc(modelLabel(f.split(":")[0]))} did not answer (quota or service overloaded). The ranking uses the other sources.</p>`).join("");
+function renderResult(data, seconds) {
+  if (!state.ranking.length) renderRanking(data.ranking);
+  if (!state.explain && data.explanations && Object.keys(data.explanations).length) {
+    state.explain = { explanations: data.explanations, next_findings: data.next_findings || [] };
+    renderExplanations();
+  }
+  if (data.summaries) { state.summaries = data.summaries; renderSummaries(); }
+  for (const f of data.failed || []) {
+    if (f.includes("(summary)")) setStep("summarize", "failed", "no answer");
+    else setStep(stepOf(f.split(":")[0]), "failed", "no answer");
+  }
+  for (const st of AFTER_SOURCES) {
+    const li = document.querySelector(`#progress li[data-step="${st}"]`);
+    if (li && li.className !== "failed") setStep(st, "done", li.className === "done" ? undefined : "done");
+  }
+  $("warnings").innerHTML = (data.failed || []).filter((f) => !f.includes("(summary)")).map((f) =>
+    `<p class="alert">${esc(modelLabel(f.split(":")[0]))} did not answer (quota or service overloaded). The ranking uses the other sources.</p>`).join("");
   const usd = data.usd ? ` · $${data.usd.toFixed(4)}` : "";
   $("result-meta").textContent = `${seconds.toFixed(1)} s${usd}`;
   $("result-meta").hidden = false;
   $("result-foot").hidden = false;
 }
 
-// Explanations per candidate (why it fits, next test, evidence) will be added here.
-function renderDetails(candidate) { return ""; }
+// ------------------------------------------------------------------ explanations
+const shortName = (name) => name.split(/[,;]/)[0];
+const pct = (f) => `${Math.round(f * 100)}%`;
+const chipList = (items, cls, extra) => items.length
+  ? items.map((x) => `<span class="fchip ${cls}" title="${esc(x.hpo)}">${esc(x.name)}${extra ? extra(x) : ""}</span>`).join("")
+  : '<span class="fchip none">none</span>';
+
+function whyPanel(disease) {
+  const e = state.explain.explanations[disease];
+  const summary = state.summaries[disease];
+  const summaryModel = state.summaryModel ? modelLabel(state.summaryModel) : "LLM";
+  const fits = e.fits.map((x) => ({ ...x, name: x.as ? `${x.name} ~ ${x.as}` : x.name })).concat(e.partial.map((x) => ({ ...x, name: `${x.name} ~ ${x.shared}` })));
+  return `<div class="why">
+      <div class="why-summary">${summary
+        ? `<p class="why-text">${esc(summary)}</p><span class="via">Written by ${esc(summaryModel)} from the facts below</span>`
+        : `<span class="sk-line" style="width:92%"></span><span class="sk-line" style="width:64%"></span><span class="via">${esc(summaryModel)} is writing a summary…</span>`}</div>
+      <div class="why-grid">
+        <div class="why-block"><h4>Fits</h4><div class="fchips">${chipList(fits, "fit")}</div></div>
+        <div class="why-block"><h4>Against</h4><div class="fchips">${chipList(e.against, "against", (x) => ` <small>absent · seen in ${pct(x.frequency)}</small>`)}</div></div>
+        <div class="why-block"><h4>Typical, not mentioned</h4><div class="fchips">${chipList(e.typical, "typ", (x) => ` <small>${pct(x.frequency)}</small>`)}</div></div>
+        <div class="why-block"><h4>Not explained by it</h4><div class="fchips">${chipList(e.unexplained, "typ")}</div></div>
+      </div>
+      <div class="why-foot">${e.genes.length
+        ? `<span>Confirm with genetic testing:</span>${e.genes.map((g) => `<span class="gene">${esc(g)}</span>`).join("")}`
+        : '<span class="muted">No gene linked in the HPO files.</span>'}
+        <span class="via">Findings and frequencies: HPO annotations (phenotype.hpoa) · Genes: HPO genes_to_disease</span></div>
+    </div>`;
+}
+
+function renderExplanations() {
+  const ex = state.explain;
+  if (!ex) return;
+  document.querySelectorAll("#ranking .cand").forEach((li) => {
+    const d = li.dataset.d;
+    if (!ex.explanations[d]) return;
+    const slot = li.querySelector(".why-slot");
+    if (!slot.innerHTML) slot.innerHTML = `<button type="button" class="why-btn" data-why="${esc(d)}" aria-expanded="false">Why ${ICON_DOWN}</button>`;
+    const box = li.querySelector(".cand-details");
+    if (!box.hidden) box.innerHTML = whyPanel(d);
+  });
+  // open the first candidate by default
+  const first = document.querySelector("#ranking .cand");
+  if (first && ex.explanations[first.dataset.d] && first.querySelector(".cand-details").hidden) toggleWhy(first.dataset.d);
+  renderNextFindings();
+}
+
+function renderSummaries() {
+  document.querySelectorAll("#ranking .cand").forEach((li) => {
+    const box = li.querySelector(".cand-details");
+    if (!box.hidden && state.explain && state.explain.explanations[li.dataset.d]) box.innerHTML = whyPanel(li.dataset.d);
+  });
+}
+
+function toggleWhy(disease) {
+  const li = document.querySelector(`#ranking .cand[data-d="${CSS.escape(disease)}"]`);
+  if (!li) return;
+  const box = li.querySelector(".cand-details");
+  const open = box.hidden;
+  if (open) box.innerHTML = whyPanel(disease);
+  box.hidden = !open;
+  li.classList.toggle("open", open);
+  li.querySelector(".why-btn")?.setAttribute("aria-expanded", String(open));
+}
+
+function renderNextFindings() {
+  const list = (state.explain && state.explain.next_findings) || [];
+  if (!list.length) { $("next-card").innerHTML = ""; return; }
+  const names = Object.fromEntries(state.ranking.map((r) => [r.disease, shortName(r.name)]));
+  $("next-card").innerHTML = `<div class="card next-card">
+      <div class="card-head"><span>Most useful next findings</span><span class="via">information gain over the top 5 · HPO annotation frequencies</span></div>
+      <ul class="next-list">${list.map((f, i) => {
+        const yes = Object.entries(f.expected).filter(([, q]) => q >= 0.3).map(([d, q]) => `${esc(names[d] || d)} ${pct(q)}`);
+        return `<li>
+            <span class="next-name">${esc(f.name)} <span class="code">${esc(f.hpo)}</span></span>
+            <span class="next-actions"><button type="button" data-next="${i}" data-val="1">Present</button><button type="button" class="neg" data-next="${i}" data-val="0">Absent</button></span>
+            <span class="next-exp">Expected in ${yes.join(" · ") || "none of them"}${yes.length < Object.keys(f.expected).length ? " · rare in the rest" : ""}</span>
+          </li>`;
+      }).join("")}</ul>
+    </div>`;
+}
+
+function onResultClick(e) {
+  const why = e.target.closest("[data-why]");
+  if (why) { toggleWhy(why.dataset.why); return; }
+  const nb = e.target.closest("[data-next]");
+  if (nb) {   // the doctor answers a suggested finding: add it and recompute
+    const f = state.explain.next_findings[+nb.dataset.next];
+    addTerm({ hpo: f.hpo, name: f.name, present: nb.dataset.val === "1", quote: "", how: "manual", score: 1, alternatives: [] });
+    runDifferential();
+  }
+}
+
 
 // ------------------------------------------------------------------ start
 async function init() {
-  try { state.models = (await (await api("/health")).json()).llm_models || []; } catch (_) { /* server not ready */ }
+  try {
+    const h = await (await api("/health")).json();
+    state.models = h.llm_models || [];
+    state.summaryModel = h.summary_model || null;
+  } catch (_) { /* server not ready */ }
   document.querySelectorAll("[data-example]").forEach((b) => b.addEventListener("click", () => loadExample(+b.dataset.example)));
   $("btn-extract").addEventListener("click", extract);
   $("note").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) extract(); });
@@ -390,6 +526,7 @@ async function init() {
   $("term-search").addEventListener("blur", () => setTimeout(hideSearch, 150));
   $("btn-back").addEventListener("click", () => goTo("case"));
   $("btn-run").addEventListener("click", runDifferential);
+  $("view-result").addEventListener("click", onResultClick);
   $("btn-edit").addEventListener("click", () => { renderReview(); goTo("review"); });
   const newCase = () => { $("note").value = ""; $("age").value = ""; $("sex-n").checked = true; state.caseId = null; state.finished = false; state.terms = []; state.unmatched = []; goTo("case"); $("note").focus(); };
   $("btn-new").addEventListener("click", newCase);

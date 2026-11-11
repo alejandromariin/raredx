@@ -16,7 +16,10 @@ Calls, in the order the interface makes them:
           progress instead of waiting in silence:
             event: step     data: {"step": "running", "label": "Asking the ontology ranker, GPT-6 Luna..."}
             event: step     data: {"step": "llm_gpt_6_luna", "label": "GPT-6 Luna answered", "seconds": 8.6}
-            event: result   data: {"ranking": [...], "failed": [], "timings": {...}, "usd": 0.0004}
+            event: ranking   data: {"ranking": [...]}                       (as soon as the fusion is done)
+            event: explain   data: {"explanations": {...}, "next_findings": [...]}
+            event: summaries data: {"summaries": {"OMIM:154700": "..."}}
+            event: result    data: {"ranking": [...], "failed": [], "timings": {...}, "usd": 0.0004, ...}
   4. GET  /cases/{case_id}       -> the case as it stands (e.g. to reload the page)
 """
 from __future__ import annotations
@@ -77,7 +80,8 @@ def _state(case_id: str) -> dict:
 
 def _labels() -> dict[str, str]:
     """Readable progress messages per graph step."""
-    out = {"ranker": "Ontology ranker done", "fuse": "Final ranking ready"}
+    out = {"ranker": "Ontology ranker done", "fuse": "Final ranking ready",
+           "explain": "Explanations ready", "summarize": "Summaries written"}
     for m in P.models:
         out[_node_name(m)] = f"{m.split('/')[-1]} answered"
     return out
@@ -90,7 +94,8 @@ def _sse(event: str, data: dict) -> str:
 # ---------------------------------------------------------------------- endpoints
 @app.get("/health")
 def health() -> dict:
-    return {"ok": P is not None, "llm_models": P.models if P else []}
+    return {"ok": P is not None, "llm_models": P.models if P else [],
+            "summary_model": P.summary_model if P else None}
 
 
 @app.post("/cases")
@@ -128,14 +133,25 @@ def resume(case_id: str, body: Review) -> StreamingResponse:
             for step, update in P.resume(case_id, body.hpo_present, body.hpo_excluded):
                 if step.startswith("__") or step == "review":
                     continue
-                timings = (update or {}).get("timings", {})
+                update = update or {}
+                timings = update.get("timings", {})
                 yield _sse("step", {"step": step, "label": labels.get(step, step),
                                     "seconds": next(iter(timings.values()), None)})
+                # partial results as soon as they exist, so the page fills in step by step
+                if step == "fuse":
+                    yield _sse("ranking", {"ranking": update.get("ranking", [])})
+                elif step == "explain":
+                    yield _sse("explain", {"explanations": update.get("explanations", {}),
+                                           "next_findings": update.get("next_findings", [])})
+                elif step == "summarize":
+                    yield _sse("summaries", {"summaries": update.get("summaries", {})})
         except Exception as err:               # the page shows the error instead of hanging
             yield _sse("error", {"message": str(err)[:500]})
             return
         final = P.final_state(case_id)
         yield _sse("result", {"ranking": final.get("ranking", []), "failed": final.get("failed", []),
+                              "explanations": final.get("explanations", {}), "next_findings": final.get("next_findings", []),
+                              "summaries": final.get("summaries", {}),
                               "hpo_present": _named(final.get("hpo_present", [])),
                               "hpo_excluded": _named(final.get("hpo_excluded", [])),
                               "timings": final.get("timings", {}), "usd": round(final.get("usd", 0.0), 5)})
