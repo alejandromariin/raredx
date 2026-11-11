@@ -63,6 +63,15 @@ These 500 patients, from papers not used anywhere else, were never used to build
 - **The learned fusion puts the correct disease first in 26 % of patients, against 15.6 % for the best single source** (GPT-6 Luna): +10.4 points (95 % CI +7.4 to +13.6, paired bootstrap over patients, p < 0.001). In top 10: 41 % against 31.8 % (+9.2 points, CI +6.2 to +12.6).
 - The gain comes from learning how to combine the sources: a fusion without learning (RRF) or a linear one (logistic regression) stays close to the best single source.
 - **Ceiling:** the correct disease is among the candidates in 49.8 % of test patients; the fusion can only reorder those.
+- **Confidence indicator** (`results/confidence.json`): each differential is labelled low, medium or high by how much its first candidate stands out among the ten shown. Thresholds were set on validation (three equal groups) and checked on test:
+
+  | Level | First suggestion right (validation / test) | Correct disease in top 10 (validation / test) |
+  |---|---|---|
+  | Low | 4.5 % / 5.1 % | 17.9 % / 28.3 % |
+  | Medium | 12.1 % / 20.8 % | 22.7 % / 34.9 % |
+  | High | 52.2 % / 48.8 % | 64.2 % / 58.2 % |
+
+  The interface shows the doctor these numbers for the patient's level: a high-confidence differential is right first about half the time, a low one almost never.
 - **Reproduce everything** from the response caches with `make eval` (no new LLM calls once the caches are complete).
 
 ### Results on validation (200 cases; the test sample is kept for the final evaluation)

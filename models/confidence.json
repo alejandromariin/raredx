@@ -1,0 +1,25 @@
+{
+  "signal": "share of the first candidate among the top ten (softmax of fusion scores)",
+  "thresholds": [
+    0.30444131077441927,
+    0.482088209072679
+  ],
+  "measured_on": "validation sample (200 cases)",
+  "levels": {
+    "low": {
+      "cases": 67,
+      "top1": 0.045,
+      "top10": 0.179
+    },
+    "medium": {
+      "cases": 66,
+      "top1": 0.121,
+      "top10": 0.227
+    },
+    "high": {
+      "cases": 67,
+      "top1": 0.522,
+      "top10": 0.642
+    }
+  }
+}
