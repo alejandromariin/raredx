@@ -140,7 +140,7 @@ def resume(case_id: str, body: Review) -> StreamingResponse:
                                     "seconds": next(iter(timings.values()), None)})
                 # partial results as soon as they exist, so the page fills in step by step
                 if step == "fuse":
-                    yield _sse("ranking", {"ranking": update.get("ranking", [])})
+                    yield _sse("ranking", {"ranking": update.get("ranking", []), "confidence": update.get("confidence", {})})
                 elif step == "explain":
                     yield _sse("explain", {"explanations": update.get("explanations", {}),
                                            "next_findings": update.get("next_findings", [])})
@@ -155,6 +155,7 @@ def resume(case_id: str, body: Review) -> StreamingResponse:
         yield _sse("result", {"ranking": final.get("ranking", []), "failed": final.get("failed", []),
                               "explanations": final.get("explanations", {}), "next_findings": final.get("next_findings", []),
                               "summaries": final.get("summaries", {}), "evidence": final.get("evidence", {}),
+                              "confidence": final.get("confidence", {}),
                               "hpo_present": _named(final.get("hpo_present", [])),
                               "hpo_excluded": _named(final.get("hpo_excluded", [])),
                               "timings": final.get("timings", {}), "usd": round(final.get("usd", 0.0), 5)})

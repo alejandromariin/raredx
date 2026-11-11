@@ -320,6 +320,7 @@ async function runDifferential() {
     return `<li data-step="${p.step}" class="${later ? "" : "running"}"><span class="mark"></span>${esc(p.label)}${p.via ? `<span class="via">${esc(p.via)}</span>` : ""}<span class="t">${later ? "waiting" : "working…"}</span></li>`;
   }).join("");
   $("next-card").innerHTML = "";
+  $("confidence").innerHTML = "";
   state.ranking = []; state.explain = null; state.summaries = {}; state.summariesDone = false;
   state.evidence = {}; state.evidenceDone = false;
   $("ranking").innerHTML = skeletonRows(6);
@@ -352,6 +353,7 @@ async function runDifferential() {
         }
       } else if (event === "ranking") {
         renderRanking(data.ranking);
+        renderConfidence(data.confidence);
       } else if (event === "explain") {
         state.explain = data;
         renderExplanations();
@@ -409,7 +411,7 @@ function renderRanking(ranking) {
 }
 
 function renderResult(data, seconds) {
-  if (!state.ranking.length) renderRanking(data.ranking);
+  if (!state.ranking.length) { renderRanking(data.ranking); renderConfidence(data.confidence); }
   if (!state.explain && data.explanations && Object.keys(data.explanations).length) {
     state.explain = { explanations: data.explanations, next_findings: data.next_findings || [] };
     renderExplanations();
@@ -434,6 +436,21 @@ function renderResult(data, seconds) {
   $("result-meta").textContent = `${seconds.toFixed(1)} s${usd}`;
   $("result-meta").hidden = false;
   $("result-foot").hidden = false;
+}
+
+// How much to trust this differential: its level and what that level achieved on validation
+const CONF_TEXT = { low: "Low confidence", medium: "Medium confidence", high: "High confidence" };
+function renderConfidence(c) {
+  if (!c || !c.level) { $("confidence").innerHTML = ""; return; }
+  const n = { low: 1, medium: 2, high: 3 }[c.level];
+  const seg = [1, 2, 3].map((i) => `<span class="${i <= n ? "on" : ""}"></span>`).join("");
+  $("confidence").innerHTML = `<div class="card conf conf-${c.level}">
+      <span class="conf-meter" aria-hidden="true">${seg}</span>
+      <div><div class="conf-level">${CONF_TEXT[c.level]}</div>
+        <div class="conf-text">In similar validation cases the first suggestion was right <b>${pct(c.top1)}</b> of the time,
+          and the correct disease was in the top 10 in <b>${pct(c.top10)}</b>.</div>
+        <span class="via">Measured on the ${esc(c.measured_on)}, never used for training; checked on the test sample.</span></div>
+    </div>`;
 }
 
 // ------------------------------------------------------------------ explanations

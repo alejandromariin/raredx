@@ -683,16 +683,75 @@ def eval_all() -> None:
         for split in SPLITS:
             steps.append((f"llm {m} {split}", lambda m=m, split=split: eval_llm(m, split)))
     steps += [("fusion (validation)", eval_fusion), ("ablation", eval_ablation), ("final test", eval_test),
+              ("confidence calibration", calibrate_confidence),
               ("contamination", eval_contamination), ("extraction", lambda: eval_extraction("val", 100))]
     for name, run in steps:
         print(f"\n=== {name} ===", flush=True)
         run()
     print("\nAll results written to results/.")
 
+# =============================================================================
+# CONFIDENCE (RF13): how much to trust a given differential.
+# Signal: how much the first candidate stands out among the ten shown (softmax of
+# the fusion scores; the same value the bars show). Validation cases (never seen by
+# the fusion) are split into three equal groups by that signal: low / medium / high.
+# For each group we count how often the first candidate was right and how often the
+# correct disease was in the top 10. The app shows those numbers for a new patient's
+# group. The test sample checks that they hold on unseen data.
+# =============================================================================
+
+def top_share(scores) -> float:
+    """Share of the first candidate among the top ten (softmax of the fusion scores)."""
+    import numpy as np
+    s = np.sort(np.asarray(scores, dtype=float))[::-1][:10]
+    p = np.exp(s - s.max())
+    return float(p[0] / p.sum())
+
+
+def calibrate_confidence() -> dict:
+    import numpy as np
+    from .ensemble import Ensemble
+    from .fusion import MODELS, FeatureBuilder, load_fusion, ranks_from_scores
+    from .ranker import OntologyRanker
+    saved = load_fusion()
+    ranker = OntologyRanker()
+    fb = FeatureBuilder(ranker, Ensemble(onto=ranker.onto), saved["llm_models"], load_settings()["fusion"]["ranker_top"])
+
+    def shares_and_ranks(split):
+        ds = fb.dataset(sample_cases_of(split))
+        scores = saved["model"].score(ds)
+        starts = np.cumsum([0] + ds["groups"])
+        shares = [top_share(scores[a:b]) for a, b in zip(starts[:-1], starts[1:])]
+        return np.array(shares), ranks_from_scores(ds, scores)
+
+    print("validation...", flush=True)
+    val_share, val_rank = shares_and_ranks("val")
+    print("test...", flush=True)
+    test_share, test_rank = shares_and_ranks("test")
+    cuts = [float(x) for x in np.percentile(val_share, [100 / 3, 200 / 3])]
+    names = ["low", "medium", "high"]
+    level = lambda x: names[int(np.searchsorted(cuts, x, side="right"))]
+
+    def stats(shares, ranks):
+        out = {}
+        for name in names:
+            r = [rk for sh, rk in zip(shares, ranks) if level(sh) == name]
+            out[name] = {"cases": len(r), "top1": round(float(np.mean([x is not None and x <= 1 for x in r])), 3) if r else None,
+                         "top10": round(float(np.mean([x is not None and x <= 10 for x in r])), 3) if r else None}
+        return out
+
+    calib = {"signal": "share of the first candidate among the top ten (softmax of fusion scores)",
+             "thresholds": cuts, "measured_on": f"validation sample ({len(val_share)} cases)",
+             "levels": stats(val_share, val_rank)}
+    (MODELS / "confidence.json").write_text(json.dumps(calib, indent=2) + "\n", encoding="utf-8")
+    result = {**calib, "check_on_test": stats(test_share, test_rank)}
+    (RESULTS / "confidence.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion", "test", "all"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion", "test", "calibrate", "all"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`/`contamination`: a random subset of N cases/pairs")
@@ -711,6 +770,8 @@ def main() -> None:
         print(json.dumps(eval_timing(args.limit or 10), indent=2))
     elif args.command == "contamination":
         print(json.dumps(eval_contamination(args.limit), indent=2))
+    elif args.command == "calibrate":
+        print(json.dumps(calibrate_confidence(), indent=2))
     elif args.command == "test":
         print(json.dumps(eval_test(), indent=2))
     elif args.command == "all":

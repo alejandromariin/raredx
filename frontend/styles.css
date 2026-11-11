@@ -252,6 +252,16 @@ kbd { font: 11px/1 var(--mono); padding: 4px 5px; border: 1px solid var(--border
 .ev-site { display: block; font: 11.5px/1.4 var(--mono); color: var(--muted); margin-top: 1px; }
 .ev-group p { margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 
+.conf { display: flex; gap: 14px; align-items: flex-start; padding: 12px 16px; margin-bottom: 14px; }
+.conf-meter { display: inline-flex; gap: 3px; margin-top: 4px; flex: none; }
+.conf-meter span { width: 16px; height: 6px; border-radius: 3px; background: #ebe8e1; }
+.conf-high .conf-meter span.on { background: var(--accent); }
+.conf-medium .conf-meter span.on { background: #b9892f; }
+.conf-low .conf-meter span.on { background: var(--absent); }
+.conf-level { font-weight: 600; font-size: 14px; }
+.conf-text { font-size: 13.5px; color: var(--muted); margin: 1px 0 2px; }
+.conf-text b { color: var(--ink); font-weight: 600; }
+
 /* ---------- footer ---------- */
 .disclaimer { margin-top: 64px; padding-top: 16px; padding-bottom: 36px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
 

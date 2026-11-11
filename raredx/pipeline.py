@@ -23,6 +23,7 @@ Command line (needs Bifrost running; approves the symptoms without changes):
 from __future__ import annotations
 
 import argparse
+import json
 import operator
 import time
 import uuid
@@ -73,6 +74,7 @@ class State(TypedDict, total=False):
     next_findings: list             # findings that best separate the top candidates
     summaries: dict                 # {disease: one or two sentences by the LLM}
     evidence: dict                  # {disease: [live web results from Tavily]}
+    confidence: dict                # {"level": "medium", "top1": 0.24, "top10": 0.41, ...}
 
 
 def _node_name(model: str) -> str:
@@ -103,6 +105,9 @@ class Pipeline:
         self.fusion, self.models = saved["model"], saved["llm_models"]
         self.features = FeatureBuilder(self.ranker, self.ensemble, self.models)
         took("fusion model + prevalence")
+        # confidence levels measured on validation (`python -m raredx.evaluate calibrate`)
+        calib = ROOT / "models" / "confidence.json"
+        self.calibration = json.loads(calib.read_text(encoding="utf-8")) if calib.exists() else None
         cfg = load_settings()["llm"]["utility"]
         self.summary_model = f"{cfg['provider']}/{cfg['model']}"
         self.explainer = Explainer(self.ranker, client, self.summary_model)
@@ -169,7 +174,21 @@ class Pipeline:
                 "llm_positions": {m: (int(row[cols.index(f"{m}:pos")]) if m in llm and row[cols.index(f"{m}:listed")] else None)
                                   for m in self.models},
             })
-        return {"ranking": ranking, "timings": {"fuse": round(time.perf_counter() - t, 3)}}
+        return {"ranking": ranking, "confidence": self._confidence(scores),
+                "timings": {"fuse": round(time.perf_counter() - t, 3)}}
+
+    def _confidence(self, scores) -> dict:
+        """Which confidence level this differential falls in, with what that level achieved
+        on validation (e.g. medium: first suggestion right 24 %, correct disease in top 10 41 %)."""
+        if not self.calibration:
+            return {}
+        s = np.sort(np.asarray(scores, dtype=float))[::-1][:10]
+        p = np.exp(s - s.max())
+        share = float(p[0] / p.sum())
+        names = ["low", "medium", "high"]
+        level = names[int(np.searchsorted(self.calibration["thresholds"], share, side="right"))]
+        return {"level": level, "share": round(share, 3), **self.calibration["levels"][level],
+                "measured_on": self.calibration["measured_on"]}
 
     def explain(self, state: State) -> dict:
         t = time.perf_counter()
@@ -302,6 +321,9 @@ def main() -> None:
         print(f"\n{d}: {text}")
     if state.get("failed"):
         print("\nfailed:", *state["failed"], sep="\n  ")
+    if state.get("confidence"):
+        c = state["confidence"]
+        print(f"\nconfidence: {c['level']} (on validation: first right {c['top1']:.0%}, in top 10 {c['top10']:.0%})")
     print(f"\ntotal {time.perf_counter() - t0:.1f} s, {state.get('usd', 0):.5f} $, steps: {state.get('timings')}")
 
 
