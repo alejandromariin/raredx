@@ -229,12 +229,16 @@ class LLMClient:
                         tries_429 += 1
                         continue
                     raise RateLimited(f"{body.get('model')}: rate limit or daily quota reached. {detail}") from None
-                if err.code in (500, 502, 503, 504):
+                # Bifrost answers 400 when it cannot reach the provider at all (network cut,
+                # "failed to make HTTP request to provider API"): a passing failure, like an overload
+                network = err.code == 400 and "failed to make HTTP request" in detail
+                if err.code in (500, 502, 503, 504) or network:
                     if tries_5xx < len(self.waits_overload):
                         time.sleep(self.waits_overload[tries_5xx])
                         tries_5xx += 1
                         continue
-                    raise Overloaded(f"{body.get('model')}: provider error {err.code} after retries. {detail}") from None
+                    what = "cannot reach the provider (network)" if network else f"provider error {err.code}"
+                    raise Overloaded(f"{body.get('model')}: {what} after retries. {detail}") from None
                 raise RuntimeError(f"Bifrost returned {err.code}: {detail}") from None
             except urllib.error.URLError as err:
                 if isinstance(err.reason, TimeoutError):
