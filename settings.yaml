@@ -58,3 +58,7 @@ phenotype:
   min_score: 0.45
   # HPO alternatives shown to the doctor for each symptom
   alternatives: 5
+evidence:
+  # Live web evidence with Tavily, shown to the doctor (never used for the ranking)
+  top: 3          # candidates searched
+  max_results: 3  # results per search (2 searches per candidate: literature, trials and support)

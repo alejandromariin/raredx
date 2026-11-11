@@ -17,6 +17,9 @@ const state = {
   explain: null,         // {explanations, next_findings} for the top candidates
   summaries: {},         // {disease: sentence}
   summariesDone: false,  // the summary step finished (with or without sentences)
+  evidenceOn: false,     // the server can search the web (Tavily key set)
+  evidence: {},          // {disease: [live web results]}
+  evidenceDone: false,
   caseId: null,
   finished: false,       // the server case already has a result
   note: "", sex: "", age: null,
@@ -262,9 +265,12 @@ function progressItems() {
     .concat(state.models.map((m) => ({ step: stepOf(m), label: modelLabel(m) })))
     .concat([{ step: "fuse", label: "Learned fusion" },
              { step: "explain", label: "Explanations", via: "HPO annotations" },
-             { step: "summarize", label: "Summary", via: state.summaryModel ? modelLabel(state.summaryModel) : "LLM" }]);
+             { step: "summarize", label: "Summary", via: state.summaryModel ? modelLabel(state.summaryModel) : "LLM" }])
+    .concat(state.evidenceOn ? [{ step: "evidence", label: "Live evidence", via: "Tavily web search" }] : []);
 }
-const AFTER_SOURCES = ["fuse", "explain", "summarize"];   // run one after the other
+// After the sources: fuse, then explain, then summary and live evidence at the same time
+const STAGES = [["fuse"], ["explain"], ["summarize", "evidence"]];
+const AFTER_SOURCES = STAGES.flat();
 const stepOf = (model) => "llm_" + model.split("/").pop().replace(/[^a-z0-9]/gi, "_");
 
 function setStep(step, cls, text) {
@@ -315,6 +321,7 @@ async function runDifferential() {
   }).join("");
   $("next-card").innerHTML = "";
   state.ranking = []; state.explain = null; state.summaries = {}; state.summariesDone = false;
+  state.evidence = {}; state.evidenceDone = false;
   $("ranking").innerHTML = skeletonRows(6);
   $("warnings").innerHTML = "";
   $("result-meta").hidden = true;
@@ -335,15 +342,23 @@ async function runDifferential() {
         // when the sources are done, the steps after them start one after the other
         const sourcesLeft = [...document.querySelectorAll("#progress li.running")].filter((li) => !AFTER_SOURCES.includes(li.dataset.step));
         if (!sourcesLeft.length) {
-          const next = AFTER_SOURCES.map((st) => document.querySelector(`#progress li[data-step="${st}"]`)).find((li) => li && li.className === "");
-          const busy = AFTER_SOURCES.some((st) => document.querySelector(`#progress li[data-step="${st}"]`)?.className === "running");
-          if (next && !busy) setStep(next.dataset.step, "running", "working…");
+          const li = (st) => document.querySelector(`#progress li[data-step="${st}"]`);
+          for (const stage of STAGES) {          // start the first stage that has not finished
+            const present = stage.filter((st) => li(st));
+            if (present.every((st) => ["done", "failed"].includes(li(st).className))) continue;
+            present.filter((st) => li(st).className === "").forEach((st) => setStep(st, "running", "working…"));
+            break;
+          }
         }
       } else if (event === "ranking") {
         renderRanking(data.ranking);
       } else if (event === "explain") {
         state.explain = data;
         renderExplanations();
+      } else if (event === "evidence") {
+        state.evidence = data.evidence || {};
+        state.evidenceDone = true;
+        renderSummaries();
       } else if (event === "summaries") {
         state.summaries = data.summaries || {};
         state.summariesDone = true;
@@ -401,16 +416,19 @@ function renderResult(data, seconds) {
   }
   state.summaries = data.summaries || state.summaries;
   state.summariesDone = true;
+  state.evidence = data.evidence || state.evidence;
+  state.evidenceDone = true;
   renderSummaries();
   for (const f of data.failed || []) {
     if (f.includes("(summary)")) setStep("summarize", "failed", "no answer");
+    else if (f.includes("(evidence)")) setStep("evidence", "failed", "no answer");
     else setStep(stepOf(f.split(":")[0]), "failed", "no answer");
   }
   for (const st of AFTER_SOURCES) {
     const li = document.querySelector(`#progress li[data-step="${st}"]`);
     if (li && li.className !== "failed") setStep(st, "done", li.className === "done" ? undefined : "done");
   }
-  $("warnings").innerHTML = (data.failed || []).filter((f) => !f.includes("(summary)")).map((f) =>
+  $("warnings").innerHTML = (data.failed || []).filter((f) => !f.includes("(summary)") && !f.includes("(evidence)")).map((f) =>
     `<p class="alert">${esc(modelLabel(f.split(":")[0]))} did not answer (quota or service overloaded). The ranking uses the other sources.</p>`).join("");
   const usd = data.usd ? ` · $${data.usd.toFixed(4)}` : "";
   $("result-meta").textContent = `${seconds.toFixed(1)} s${usd}`;
@@ -446,7 +464,30 @@ function whyPanel(disease) {
         ? `<span>Confirm with genetic testing:</span>${e.genes.map((g) => `<span class="gene">${esc(g)}</span>`).join("")}`
         : '<span class="muted">No gene linked in the HPO files.</span>'}
         <span class="via">Findings and frequencies: HPO annotations (phenotype.hpoa) · Genes: HPO genes_to_disease</span></div>
+      ${evidenceBlock(disease)}
     </div>`;
+}
+
+const EVIDENCE_GROUPS = [["literature", "Recent literature"], ["trials", "Trials and patient support"]];
+function evidenceBlock(disease) {
+  if (!state.evidenceOn) return "";
+  const rank = state.ranking.findIndex((r) => r.disease === disease);
+  if (!state.evidenceDone) {
+    return `<div class="evidence"><h4>Live evidence</h4><span class="sk-line" style="width:80%"></span><span class="sk-line" style="width:55%"></span><span class="via">Tavily is searching the web…</span></div>`;
+  }
+  const found = state.evidence[disease];
+  if (!found) {
+    return rank >= 3 ? `<div class="evidence"><h4>Live evidence</h4><span class="via">Live evidence is searched for the top 3 candidates.</span></div>` : "";
+  }
+  const groups = EVIDENCE_GROUPS.map(([kind, title]) => {
+    const items = found.filter((r) => r.kind === kind);
+    return `<div class="ev-group"><h5>${title}</h5>${items.length ? `<ul>${items.map((r) => `<li>
+          <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}${ICON_EXT}</a>
+          <span class="ev-site">${esc(r.site)}${r.date ? ` · ${esc(String(r.date).slice(0, 10))}` : ""}</span>
+          ${r.snippet ? `<p>${esc(r.snippet)}</p>` : ""}</li>`).join("")}</ul>` : '<span class="fchip none">nothing found</span>'}</div>`;
+  }).join("");
+  return `<div class="evidence"><h4>Live evidence</h4><div class="ev-grid">${groups}</div>
+      <span class="via">Found now by Tavily web search (PubMed, GeneReviews, ClinicalTrials.gov, Orphanet, NORD, GARD). Not used for the ranking.</span></div>`;
 }
 
 function renderExplanations() {
@@ -520,6 +561,7 @@ async function init() {
     const h = await (await api("/health")).json();
     state.models = h.llm_models || [];
     state.summaryModel = h.summary_model || null;
+    state.evidenceOn = !!h.evidence;
   } catch (_) { /* server not ready */ }
   document.querySelectorAll("[data-example]").forEach((b) => b.addEventListener("click", () => loadExample(+b.dataset.example)));
   $("btn-extract").addEventListener("click", extract);

@@ -1,7 +1,7 @@
 """The full flow, as a LangGraph graph. The demo app and the command line use it.
 
     note --> extract --> review --> ranker ----------+
-                         (pause)  \\-> llm (each LLM) --+--> fuse --> explain --> summarize --> result
+                         (pause)  \\-> llm (each LLM) --+--> fuse --> explain --> summarize + evidence (Tavily) --> result
                                     (all at the same time)
 
 The STATE is the patient's file, shared by every step: each step reads what it needs
@@ -33,6 +33,7 @@ import numpy as np
 import yaml
 
 from .ensemble import Ensemble
+from .evidence import Evidence
 from .explain import Explainer
 from .fusion import FeatureBuilder, load_fusion
 from .llm import LLMClient
@@ -71,6 +72,7 @@ class State(TypedDict, total=False):
     explanations: dict              # {disease: fits / against / typical / genes}
     next_findings: list             # findings that best separate the top candidates
     summaries: dict                 # {disease: one or two sentences by the LLM}
+    evidence: dict                  # {disease: [live web results from Tavily]}
 
 
 def _node_name(model: str) -> str:
@@ -105,6 +107,8 @@ class Pipeline:
         self.summary_model = f"{cfg['provider']}/{cfg['model']}"
         self.explainer = Explainer(self.ranker, client, self.summary_model)
         took("explanations (annotation frequencies, genes)")
+        ev = load_settings().get("evidence", {})
+        self.evidence = Evidence(top=ev.get("top", 3), max_results=ev.get("max_results", 3))
         if self.features.columns != saved["columns"]:
             raise RuntimeError("models/fusion.pkl was trained with other columns: retrain it with `make train`")
         self.graph = self._build_graph()
@@ -183,6 +187,17 @@ class Pipeline:
         return {"summaries": out["summaries"], "usd": out["usd"],
                 "timings": {"summarize": round(time.perf_counter() - t, 2)}}
 
+    def gather_evidence(self, state: State) -> dict:
+        t = time.perf_counter()
+        if not self.evidence.available:          # no TAVILY_API_KEY: the step is skipped
+            return {"evidence": {}, "timings": {"evidence": 0.0}}
+        try:
+            found = self.evidence.gather(state["ranking"])
+        except Exception as err:                 # the evidence is a bonus: never block the result
+            return {"evidence": {}, "failed": [f"tavily (evidence): {err}"[:300]],
+                    "timings": {"evidence": round(time.perf_counter() - t, 2)}}
+        return {"evidence": found, "timings": {"evidence": round(time.perf_counter() - t, 2)}}
+
     # ------------------------------------------------------------------ graph
     def _build_graph(self):
         from langgraph.graph import END, START, StateGraph
@@ -201,6 +216,7 @@ class Pipeline:
         g.add_node("fuse", self.fuse)
         g.add_node("explain", self.explain)
         g.add_node("summarize", self.summarize)
+        g.add_node("evidence", self.gather_evidence)
         g.add_edge(START, "extract")
         g.add_edge("extract", "review")
         for s in sources:
@@ -208,7 +224,8 @@ class Pipeline:
         g.add_edge(sources, "fuse")          # ...and fuse waits for all of them
         g.add_edge("fuse", "explain")              # explanations from the ontology (instant)
         g.add_edge("explain", "summarize")         # one LLM call: a sentence per candidate
-        g.add_edge("summarize", END)
+        g.add_edge("explain", "evidence")          # Tavily web search, at the same time
+        g.add_edge(["summarize", "evidence"], END)
         # the checkpointer keeps each patient's state while the graph waits for the doctor
         return g.compile(checkpointer=Saver())
 
@@ -279,6 +296,8 @@ def main() -> None:
         print(f"{r['rank']:>2}  {r['score']:>6.2f}  {r['ranker_position']:>6}  {llm}  {r['name']} ({r['disease']})")
     if state.get("next_findings"):
         print("\nmost useful next findings:", ", ".join(f["name"] for f in state["next_findings"]))
+    for d, found in state.get("evidence", {}).items():
+        print(f"\n{d}: {len(found)} live results (Tavily)", *[f"  {r['title'][:90]} ({r['site']})" for r in found], sep="\n")
     for d, text in state.get("summaries", {}).items():
         print(f"\n{d}: {text}")
     if state.get("failed"):

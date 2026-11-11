@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, explanations per candidate, the API and the web interface work; live evidence with Tavily is next. Final results on the held-out test sample are below.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, explanations per candidate, live evidence with Tavily, the API and the web interface work. Final results on the held-out test sample are below.
 
 ## How it works
 
@@ -32,6 +32,7 @@ Ranked differential diagnosis
 - **Learned fusion.** For each patient, one row per candidate disease with what each source says about it (positions, scores, how many LLMs propose it, prevalence...). A LightGBM ranking model (lambdarank) trained on 1,000 published cases learns how much to trust each source.
 - **Explanations.** For each of the top 5 candidates, from the ontology files only (instant, nothing invented): the patient's findings it explains, absent findings that argue against it, frequent findings of the disease not mentioned yet, and the genes to test. One LLM call then writes a sentence per candidate using only those facts.
 - **Most useful next findings.** Among the findings of the top candidates, the ones that best separate them (expected information gain, from HPO annotation frequencies). The doctor can mark one as present or absent and the differential is recomputed.
+- **Live evidence.** For the top 3 candidates, [Tavily](https://tavily.com) searches the web at the moment of the query: recent literature (PubMed, PMC, GeneReviews) and open clinical trials and patient information (ClinicalTrials.gov, Orphanet, NORD, GARD). It is only shown to the doctor with its links; it never changes the ranking, so the evaluation is not affected. About 6 Tavily credits per patient, cached.
 - **Gateway.** Every LLM call goes through [Bifrost](https://github.com/maximhq/bifrost) (raredx/llm.py), with an exact response cache, a hard spending limit and per-provider rate limiting for free tiers.
 - **Models.** Ensemble: GPT-6 Luna (OpenAI, about 0.0005 $ per patient) and Gemini 3.5 Flash-Lite (Google AI Studio free tier). Contamination check: gpt-oss-120b (Groq free tier). Larger models were left out to keep the whole project within a small budget.
 - **Privacy note.** Free tiers may use the data sent to them to improve their models. That is fine for this evaluation, which only uses already-published cases, but real patient data would require paid plans or self-hosted models.
@@ -110,7 +111,7 @@ Going through a free-text note costs almost nothing in diagnostic accuracy (top 
 
 ## Quickstart
 
-Requirements: Python 3.10+, Docker (for Bifrost), API keys for OpenAI, Google AI Studio (free) and Groq (free).
+Requirements: Python 3.10+, Docker (for Bifrost), API keys for OpenAI, Google AI Studio (free), Groq (free) and Tavily (live evidence; optional).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -169,6 +170,7 @@ raredx/
   ensemble.py   LLM prompts, answer parsing
   fusion.py     candidate tables and fusion models
   explain.py    explanations per candidate and most useful next findings
+  evidence.py   live evidence from the web with Tavily
   pipeline.py   the full flow as a LangGraph graph, with a pause for the doctor's review
   api.py        FastAPI: cases, review, progress events, HPO search; serves the interface
 frontend/       the web interface (plain HTML, CSS and JavaScript, no build step)
@@ -192,6 +194,7 @@ The data is not stored in this repository: `make data` downloads it from the ori
 - **phenopacket-store** (GA4GH / Monarch Initiative), BSD-3-Clause.
 - **Orphanet / Orphadata**, CC BY 4.0.
 - **PubMed** (NCBI E-utilities), for publication dates.
+- **Tavily** web search, at query time, for the live evidence shown in the interface (links to the original sources).
 
 ## License
 

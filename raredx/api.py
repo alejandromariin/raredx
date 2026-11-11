@@ -81,7 +81,7 @@ def _state(case_id: str) -> dict:
 def _labels() -> dict[str, str]:
     """Readable progress messages per graph step."""
     out = {"ranker": "Ontology ranker done", "fuse": "Final ranking ready",
-           "explain": "Explanations ready", "summarize": "Summaries written"}
+           "explain": "Explanations ready", "summarize": "Summaries written", "evidence": "Live evidence found"}
     for m in P.models:
         out[_node_name(m)] = f"{m.split('/')[-1]} answered"
     return out
@@ -95,7 +95,8 @@ def _sse(event: str, data: dict) -> str:
 @app.get("/health")
 def health() -> dict:
     return {"ok": P is not None, "llm_models": P.models if P else [],
-            "summary_model": P.summary_model if P else None}
+            "summary_model": P.summary_model if P else None,
+            "evidence": bool(P and P.evidence.available)}
 
 
 @app.post("/cases")
@@ -145,13 +146,15 @@ def resume(case_id: str, body: Review) -> StreamingResponse:
                                            "next_findings": update.get("next_findings", [])})
                 elif step == "summarize":
                     yield _sse("summaries", {"summaries": update.get("summaries", {})})
+                elif step == "evidence":
+                    yield _sse("evidence", {"evidence": update.get("evidence", {})})
         except Exception as err:               # the page shows the error instead of hanging
             yield _sse("error", {"message": str(err)[:500]})
             return
         final = P.final_state(case_id)
         yield _sse("result", {"ranking": final.get("ranking", []), "failed": final.get("failed", []),
                               "explanations": final.get("explanations", {}), "next_findings": final.get("next_findings", []),
-                              "summaries": final.get("summaries", {}),
+                              "summaries": final.get("summaries", {}), "evidence": final.get("evidence", {}),
                               "hpo_present": _named(final.get("hpo_present", [])),
                               "hpo_excluded": _named(final.get("hpo_excluded", [])),
                               "timings": final.get("timings", {}), "usd": round(final.get("usd", 0.0), 5)})
