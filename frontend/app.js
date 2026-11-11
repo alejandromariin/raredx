@@ -16,6 +16,7 @@ const state = {
   ranking: [],           // current differential
   explain: null,         // {explanations, next_findings} for the top candidates
   summaries: {},         // {disease: sentence}
+  summariesDone: false,  // the summary step finished (with or without sentences)
   caseId: null,
   finished: false,       // the server case already has a result
   note: "", sex: "", age: null,
@@ -313,7 +314,7 @@ async function runDifferential() {
     return `<li data-step="${p.step}" class="${later ? "" : "running"}"><span class="mark"></span>${esc(p.label)}${p.via ? `<span class="via">${esc(p.via)}</span>` : ""}<span class="t">${later ? "waiting" : "working…"}</span></li>`;
   }).join("");
   $("next-card").innerHTML = "";
-  state.ranking = []; state.explain = null; state.summaries = {};
+  state.ranking = []; state.explain = null; state.summaries = {}; state.summariesDone = false;
   $("ranking").innerHTML = skeletonRows(6);
   $("warnings").innerHTML = "";
   $("result-meta").hidden = true;
@@ -345,6 +346,7 @@ async function runDifferential() {
         renderExplanations();
       } else if (event === "summaries") {
         state.summaries = data.summaries || {};
+        state.summariesDone = true;
         renderSummaries();
       } else if (event === "result") {
         state.finished = true;
@@ -397,7 +399,9 @@ function renderResult(data, seconds) {
     state.explain = { explanations: data.explanations, next_findings: data.next_findings || [] };
     renderExplanations();
   }
-  if (data.summaries) { state.summaries = data.summaries; renderSummaries(); }
+  state.summaries = data.summaries || state.summaries;
+  state.summariesDone = true;
+  renderSummaries();
   for (const f of data.failed || []) {
     if (f.includes("(summary)")) setStep("summarize", "failed", "no answer");
     else setStep(stepOf(f.split(":")[0]), "failed", "no answer");
@@ -429,7 +433,9 @@ function whyPanel(disease) {
   return `<div class="why">
       <div class="why-summary">${summary
         ? `<p class="why-text">${esc(summary)}</p><span class="via">Written by ${esc(summaryModel)} from the facts below</span>`
-        : `<span class="sk-line" style="width:92%"></span><span class="sk-line" style="width:64%"></span><span class="via">${esc(summaryModel)} is writing a summary…</span>`}</div>
+        : state.summariesDone
+          ? `<span class="via">No summary available for this candidate; the facts below come from the HPO files.</span>`
+          : `<span class="sk-line" style="width:92%"></span><span class="sk-line" style="width:64%"></span><span class="via">${esc(summaryModel)} is writing a summary…</span>`}</div>
       <div class="why-grid">
         <div class="why-block"><h4>Fits</h4><div class="fchips">${chipList(fits, "fit")}</div></div>
         <div class="why-block"><h4>Against</h4><div class="fchips">${chipList(e.against, "against", (x) => ` <small>absent · seen in ${pct(x.frequency)}</small>`)}</div></div>
@@ -484,6 +490,7 @@ function renderNextFindings() {
   const names = Object.fromEntries(state.ranking.map((r) => [r.disease, shortName(r.name)]));
   $("next-card").innerHTML = `<div class="card next-card">
       <div class="card-head"><span>Most useful next findings</span><span class="via">information gain over the top 5 · HPO annotation frequencies</span></div>
+      <p class="next-hint">Checking these in the patient would best tell the top candidates apart. Mark what you find and the differential is recomputed.</p>
       <ul class="next-list">${list.map((f, i) => {
         const yes = Object.entries(f.expected).filter(([, q]) => q >= 0.3).map(([d, q]) => `${esc(names[d] || d)} ${pct(q)}`);
         return `<li>

@@ -220,7 +220,16 @@ class Explainer:
             notes = json.loads(match.group(0))["notes"] if match else []
         except (json.JSONDecodeError, KeyError, TypeError):
             notes = []
-        valid = {r["disease"] for r in ranking[: self.top]}
-        return {"summaries": {n["disease"]: str(n["text"]).strip() for n in notes
-                              if isinstance(n, dict) and n.get("disease") in valid and n.get("text")},
-                "usd": reply.get("usd", 0.0)}
+        # Match each note to a candidate. LLMs often drop the prefix ("312750" for "OMIM:312750");
+        # when no id matches, notes are taken in the order the candidates were listed.
+        top = [r["disease"] for r in ranking[: self.top]]
+        by_number = {d.split(":")[-1]: d for d in top}
+        out = {}
+        for i, n in enumerate(n for n in notes if isinstance(n, dict) and n.get("text")):
+            raw = str(n.get("disease", "")).strip()
+            d = raw if raw in top else by_number.get(re.sub(r"\D", "", raw))
+            if d is None and len(notes) == len(top):
+                d = top[i]
+            if d and d not in out:
+                out[d] = str(n["text"]).strip()
+        return {"summaries": out, "usd": reply.get("usd", 0.0)}
