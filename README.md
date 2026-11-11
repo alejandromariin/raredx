@@ -8,7 +8,7 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 ## Status
 
-Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, explanations per candidate, the API and the web interface work; live evidence with Tavily is next. Results below are on the validation sample; the final numbers on the held-out test sample are pending.
+Work in progress. The data pipeline, the ontology ranker, the LLM ensemble and the learned fusion work end to end; free-text symptom extraction, explanations per candidate, the API and the web interface work; live evidence with Tavily is next. Final results on the held-out test sample are below.
 
 ## How it works
 
@@ -45,6 +45,24 @@ Cases come from [phenopacket-store](https://github.com/monarch-initiative/phenop
 - **Symptom extraction (round trip).** There are no public clinical notes with known HPO codes for these patients, so an LLM writes a short clinical note from each published case and the extractor turns it back into codes. We measure how many original symptoms come back and, above all, whether the ranker still finds the disease with the extracted codes (`results/extraction_val.json`). The same model family writes and reads the notes, so real notes may be harder.
 - **Contamination.** LLMs may have memorised published cases. Commercial models were trained after the most recent case in the dataset, so contamination is checked with the open model gpt-oss-120b (cutoff July 2024). Test: 86 pairs of cases of the same disease (47 diseases), one published before the cutoff and one after. If the LLM is much better on the older case of each pair while the ontology ranker (which has no cutoff) is not, the LLM is likely remembering published cases. Result: no sign of it (see below).
 - **Metrics.** Top-1 / 5 / 10 accuracy and mean reciprocal rank (MRR), with 95 % bootstrap confidence intervals. Ties are counted fairly.
+
+### Final results on the held-out test sample (500 cases, `make test`)
+
+These 500 patients, from papers not used anywhere else, were never used to build or tune anything. The fusion evaluated is the one the app uses (`models/fusion.pkl`). Full numbers with 95 % confidence intervals: `results/test.json`.
+
+| Method | Top 1 | Top 5 | Top 10 | MRR |
+|---|---|---|---|---|
+| Ontology ranker alone | 11.8 % | 17.8 % | 21.2 % | 0.15 |
+| Gemini 3.5 Flash-Lite alone | 14.4 % | 22.0 % | 24.0 % | 0.18 |
+| GPT-6 Luna alone (best single source) | 15.6 % | 26.4 % | 31.8 % | 0.21 |
+| Reciprocal rank fusion (no learning) | 10.0 % | 21.8 % | 28.2 % | 0.16 |
+| Learned fusion, logistic regression | 16.6 % | 28.2 % | 34.4 % | 0.23 |
+| **Learned fusion, LightGBM (the app)** | **26.0 %** | **36.8 %** | **41.0 %** | **0.31** |
+
+- **The learned fusion puts the correct disease first in 26 % of patients, against 15.6 % for the best single source** (GPT-6 Luna): +10.4 points (95 % CI +7.4 to +13.6, paired bootstrap over patients, p < 0.001). In top 10: 41 % against 31.8 % (+9.2 points, CI +6.2 to +12.6).
+- The gain comes from learning how to combine the sources: a fusion without learning (RRF) or a linear one (logistic regression) stays close to the best single source.
+- **Ceiling:** the correct disease is among the candidates in 49.8 % of test patients; the fusion can only reorder those.
+- **Reproduce everything** from the response caches with `make eval` (no new LLM calls once the caches are complete).
 
 ### Results on validation (200 cases; the test sample is kept for the final evaluation)
 

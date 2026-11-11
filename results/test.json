@@ -1,0 +1,336 @@
+{
+  "test_cases": 500,
+  "llm_models": [
+    "openai/gpt-6-luna",
+    "gemini/gemini-3.5-flash-lite"
+  ],
+  "fusion_trained_on": "1000 training cases",
+  "test_correct_among_candidates": 0.498,
+  "results": {
+    "ranker_alone": {
+      "cases": 500,
+      "correct_not_ranked": 251,
+      "top1": {
+        "value": 0.118,
+        "ci95": [
+          0.09,
+          0.146
+        ]
+      },
+      "top5": {
+        "value": 0.178,
+        "ci95": [
+          0.144,
+          0.214
+        ]
+      },
+      "top10": {
+        "value": 0.212,
+        "ci95": [
+          0.178,
+          0.252
+        ]
+      },
+      "mrr": {
+        "value": 0.152,
+        "ci95": [
+          0.124,
+          0.182
+        ]
+      }
+    },
+    "llm_alone:openai/gpt-6-luna": {
+      "cases": 500,
+      "correct_not_ranked": 251,
+      "top1": {
+        "value": 0.156,
+        "ci95": [
+          0.124,
+          0.188
+        ]
+      },
+      "top5": {
+        "value": 0.264,
+        "ci95": [
+          0.226,
+          0.3
+        ]
+      },
+      "top10": {
+        "value": 0.318,
+        "ci95": [
+          0.276,
+          0.358
+        ]
+      },
+      "mrr": {
+        "value": 0.212,
+        "ci95": [
+          0.18,
+          0.244
+        ]
+      }
+    },
+    "llm_alone:gemini/gemini-3.5-flash-lite": {
+      "cases": 500,
+      "correct_not_ranked": 251,
+      "top1": {
+        "value": 0.144,
+        "ci95": [
+          0.116,
+          0.174
+        ]
+      },
+      "top5": {
+        "value": 0.22,
+        "ci95": [
+          0.184,
+          0.256
+        ]
+      },
+      "top10": {
+        "value": 0.24,
+        "ci95": [
+          0.204,
+          0.276
+        ]
+      },
+      "mrr": {
+        "value": 0.183,
+        "ci95": [
+          0.153,
+          0.214
+        ]
+      }
+    },
+    "rrf_no_learning": {
+      "cases": 500,
+      "correct_not_ranked": 251,
+      "top1": {
+        "value": 0.1,
+        "ci95": [
+          0.074,
+          0.126
+        ]
+      },
+      "top5": {
+        "value": 0.218,
+        "ci95": [
+          0.182,
+          0.254
+        ]
+      },
+      "top10": {
+        "value": 0.282,
+        "ci95": [
+          0.24,
+          0.32
+        ]
+      },
+      "mrr": {
+        "value": 0.164,
+        "ci95": [
+          0.137,
+          0.191
+        ]
+      }
+    },
+    "fusion:logistic_regression": {
+      "cases": 500,
+      "correct_not_ranked": 251,
+      "top1": {
+        "value": 0.166,
+        "ci95": [
+          0.134,
+          0.198
+        ]
+      },
+      "top5": {
+        "value": 0.282,
+        "ci95": [
+          0.242,
+          0.322
+        ]
+      },
+      "top10": {
+        "value": 0.344,
+        "ci95": [
+          0.3,
+          0.386
+        ]
+      },
+      "mrr": {
+        "value": 0.225,
+        "ci95": [
+          0.192,
+          0.255
+        ]
+      }
+    },
+    "fusion:lightgbm_lambdarank (models/fusion.pkl)": {
+      "cases": 500,
+      "correct_not_ranked": 251,
+      "top1": {
+        "value": 0.26,
+        "ci95": [
+          0.22,
+          0.298
+        ]
+      },
+      "top5": {
+        "value": 0.368,
+        "ci95": [
+          0.326,
+          0.41
+        ]
+      },
+      "top10": {
+        "value": 0.41,
+        "ci95": [
+          0.366,
+          0.454
+        ]
+      },
+      "mrr": {
+        "value": 0.312,
+        "ci95": [
+          0.273,
+          0.349
+        ]
+      }
+    }
+  },
+  "best_single_source": "llm_alone:openai/gpt-6-luna",
+  "paired_fusion_vs": {
+    "ranker_alone": {
+      "top1": {
+        "difference": 0.142,
+        "ci95": [
+          0.108,
+          0.178
+        ],
+        "p_value": "<0.001"
+      },
+      "top10": {
+        "difference": 0.198,
+        "ci95": [
+          0.16,
+          0.236
+        ],
+        "p_value": "<0.001"
+      },
+      "mrr": {
+        "difference": 0.16,
+        "ci95": [
+          0.129,
+          0.191
+        ],
+        "p_value": "<0.001"
+      }
+    },
+    "llm_alone:openai/gpt-6-luna": {
+      "top1": {
+        "difference": 0.104,
+        "ci95": [
+          0.074,
+          0.136
+        ],
+        "p_value": "<0.001"
+      },
+      "top10": {
+        "difference": 0.092,
+        "ci95": [
+          0.062,
+          0.126
+        ],
+        "p_value": "<0.001"
+      },
+      "mrr": {
+        "difference": 0.099,
+        "ci95": [
+          0.075,
+          0.126
+        ],
+        "p_value": "<0.001"
+      }
+    },
+    "llm_alone:gemini/gemini-3.5-flash-lite": {
+      "top1": {
+        "difference": 0.116,
+        "ci95": [
+          0.082,
+          0.15
+        ],
+        "p_value": "<0.001"
+      },
+      "top10": {
+        "difference": 0.17,
+        "ci95": [
+          0.134,
+          0.208
+        ],
+        "p_value": "<0.001"
+      },
+      "mrr": {
+        "difference": 0.129,
+        "ci95": [
+          0.1,
+          0.159
+        ],
+        "p_value": "<0.001"
+      }
+    },
+    "rrf_no_learning": {
+      "top1": {
+        "difference": 0.16,
+        "ci95": [
+          0.124,
+          0.196
+        ],
+        "p_value": "<0.001"
+      },
+      "top10": {
+        "difference": 0.128,
+        "ci95": [
+          0.094,
+          0.164
+        ],
+        "p_value": "<0.001"
+      },
+      "mrr": {
+        "difference": 0.148,
+        "ci95": [
+          0.119,
+          0.176
+        ],
+        "p_value": "<0.001"
+      }
+    },
+    "fusion:logistic_regression": {
+      "top1": {
+        "difference": 0.094,
+        "ci95": [
+          0.062,
+          0.126
+        ],
+        "p_value": "<0.001"
+      },
+      "top10": {
+        "difference": 0.066,
+        "ci95": [
+          0.038,
+          0.096
+        ],
+        "p_value": "<0.001"
+      },
+      "mrr": {
+        "difference": 0.086,
+        "ci95": [
+          0.062,
+          0.112
+        ],
+        "p_value": "<0.001"
+      }
+    }
+  }
+}
