@@ -54,6 +54,7 @@ class Evidence:
         _load_env()
         self.key = os.environ.get("TAVILY_API_KEY", "").strip()
         self.top, self.max_results, self.timeout = top, max_results, timeout
+        self.searches = 0
         CACHE_DB.parent.mkdir(parents=True, exist_ok=True)
         self.db = _LockedDB(CACHE_DB)
         self.db.execute("CREATE TABLE IF NOT EXISTS tavily (key TEXT PRIMARY KEY, response TEXT, ts REAL)")
@@ -69,7 +70,8 @@ class Evidence:
         if time_range:
             body["time_range"] = time_range
         key = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
-        row = self.db.execute("SELECT response FROM tavily WHERE key = ?", (key,)).fetchone()
+        row = None if os.environ.get("RAREDX_NO_CACHE") else \
+            self.db.execute("SELECT response FROM tavily WHERE key = ?", (key,)).fetchone()
         if row:
             return json.loads(row[0])
         req = urllib.request.Request(TAVILY_URL, data=json.dumps(body).encode(), headers={
@@ -79,6 +81,7 @@ class Evidence:
                 results = json.load(resp).get("results", [])
         except urllib.error.HTTPError as err:
             raise RuntimeError(f"Tavily returned {err.code}: {err.read().decode(errors='replace')[:300]}") from None
+        self.searches += 1                       # real searches made (Tavily credits)
         self.db.execute("INSERT OR REPLACE INTO tavily VALUES (?, ?, ?)", (key, json.dumps(results), time.time()))
         self.db.commit()
         return results

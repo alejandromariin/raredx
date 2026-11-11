@@ -136,6 +136,7 @@ class LLMClient:
 
         # 2. CACHE: same model + same request = same key
         key = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        use_cache = use_cache and not os.environ.get("RAREDX_NO_CACHE")   # set to measure real time and cost
         row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone() if use_cache else None
         if row:
             return {**json.loads(row[0]), "usd": 0.0, "cached": True}
@@ -181,7 +182,8 @@ class LLMClient:
         out: dict[int, np.ndarray] = {}
         todo = []
         for i, t in enumerate(texts):
-            row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key_of(t),)).fetchone() if use_cache else None
+            read = use_cache and not os.environ.get("RAREDX_NO_CACHE")
+            row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key_of(t),)).fetchone() if read else None
             if row:
                 out[i] = np.frombuffer(base64.b64decode(row[0]), dtype=np.float32)
             else:

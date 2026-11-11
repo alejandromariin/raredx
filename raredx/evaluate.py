@@ -748,10 +748,56 @@ def calibrate_confidence() -> dict:
     (RESULTS / "confidence.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
+# =============================================================================
+# COST AND TIME OF THE WHOLE APP FLOW (RE7): the illustrative notes of the interface
+# go through everything the app does (extraction, ranker, both LLMs, fusion,
+# explanations, summary, Tavily), with the caches switched off so every call is real.
+# =============================================================================
+
+NOTES = [
+    ("3-year-old girl who does not walk yet, with frequent seizures, a small head for her age and low-set ears. Hearing and heart are normal.", "female", 3),
+    ("17-year-old boy, very tall and thin, with long slender fingers and toes. Both lenses are dislocated upwards. Echocardiogram shows a dilated aortic root. Scoliosis and flat feet. Normal intelligence; no hearing loss.", "male", 17),
+    ("2-year-old girl who lost the ability to sit and babble after a febrile illness at 14 months. Marked hypotonia, nystagmus and episodes of fast breathing. Lactate is high in blood and cerebrospinal fluid; MRI shows symmetric lesions in the basal ganglia. No seizures.", "female", 2),
+]
+
+
+def eval_app_timing() -> dict:
+    import os
+    import time as _time
+    import numpy as np
+    os.environ["RAREDX_NO_CACHE"] = "1"
+    from .pipeline import Pipeline
+    p = Pipeline()
+    rows = []
+    for note, sex, age in NOTES:
+        searches_before = p.evidence.searches
+        t0 = _time.perf_counter()
+        thread = None
+        for thread, _, _ in p.start(note, None, sex, age):
+            pass
+        t_review = _time.perf_counter() - t0          # until the doctor can review (extraction)
+        t1 = _time.perf_counter()
+        for _ in p.resume(thread):
+            pass
+        t_result = _time.perf_counter() - t1           # from "Compute differential" to everything shown
+        st = p.final_state(thread)
+        rows.append({"seconds_to_review": round(t_review, 1), "seconds_to_result": round(t_result, 1),
+                     "steps": st.get("timings", {}), "usd": round(st.get("usd", 0.0), 5),
+                     "tavily_searches": p.evidence.searches - searches_before, "failed": st.get("failed", [])})
+        print(f"  {len(rows)}/{len(NOTES)}: review after {t_review:.1f} s, result after {t_result:.1f} s, {rows[-1]['usd']:.5f} $", flush=True)
+    mean = lambda k: round(float(np.mean([r[k] for r in rows])), 4)
+    result = {"patients": len(rows), "llm_models": p.models, "summary_model": p.summary_model,
+              "mean": {"seconds_to_review": mean("seconds_to_review"), "seconds_to_result": mean("seconds_to_result"),
+                       "usd": mean("usd"), "tavily_searches": mean("tavily_searches")},
+              "note": "usd counts paid models only (GPT-6 Luna, OpenAI embeddings); Gemini and Groq free tiers cost 0; Tavily is counted in searches (credits)",
+              "per_patient": rows}
+    (RESULTS / "cost_time_app.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion", "test", "calibrate", "all"])
+    parser.add_argument("command", choices=["split", "ranker", "llm", "fusion", "ablation", "timing", "contamination", "extraction", "train-fusion", "test", "calibrate", "app-timing", "all"])
     parser.add_argument("--split", default="val", choices=SPLITS, help="which sample to evaluate on")
     parser.add_argument("--model", default="openai/gpt-6-luna", help="for `llm`: provider/model")
     parser.add_argument("--limit", type=int, default=None, help="for `llm`/`contamination`: a random subset of N cases/pairs")
@@ -770,6 +816,8 @@ def main() -> None:
         print(json.dumps(eval_timing(args.limit or 10), indent=2))
     elif args.command == "contamination":
         print(json.dumps(eval_contamination(args.limit), indent=2))
+    elif args.command == "app-timing":
+        print(json.dumps(eval_app_timing(), indent=2))
     elif args.command == "calibrate":
         print(json.dumps(calibrate_confidence(), indent=2))
     elif args.command == "test":
