@@ -42,10 +42,10 @@ QUERIES = {
 def _clean_title(title: str) -> str:
     """'Study Details | NCT03758924 | Study of X | ClinicalTrials.gov' -> 'Study of X (NCT03758924)';
     'MECP2 Disorders - GeneReviews® - NCBI Bookshelf' -> 'MECP2 Disorders · GeneReviews'."""
-    m = re.match(r"^Study Details \| (NCT\d+) \| (.+?) \| ClinicalTrials\.gov$", title)
-    if m:
-        return f"{m.group(2)} ({m.group(1)})"
-    title = re.sub(r"\s+-\s+GeneReviews®?\s+-\s+NCBI Bookshelf$", " · GeneReviews", title)
+    m = re.match(r"^Study Details \| (NCT\d+) \|\s*(.*?)\s*\| ClinicalTrials\.gov$", title)
+    if m:   # some trial pages have no title: show the trial number only
+        return f"{m.group(2)} ({m.group(1)})" if m.group(2) else f"Clinical trial {m.group(1)}"
+    title = re.sub(r"\s+-\s+(GeneReviews|StatPearls)®?\s+-\s+NCBI Bookshelf$", r" · \1", title)
     return re.sub(r"\s+[-|]\s+(PubMed|PMC|NCBI)$", "", title)
 
 
