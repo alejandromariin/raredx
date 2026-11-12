@@ -186,7 +186,16 @@ Measured on the three illustrative cases of the interface with all caches off, s
 
 ## Quickstart
 
-Requirements: Python 3.10+, Docker (for Bifrost), API keys for OpenAI, Google AI Studio (free), Groq (free; contamination check only) and Tavily (live evidence; optional).
+**With Docker (one command).** Requirements: Docker, and API keys for OpenAI and Google AI Studio (free); Tavily is optional (live evidence).
+
+```bash
+cp .env.example .env            # then add your API keys
+docker compose up --build       # or: make app
+```
+
+Open http://localhost:8000. The first start downloads the datasets (a few minutes, kept in `./data`). Stop with `docker compose down`.
+
+**Without Docker for the app** (to develop or run the evaluation). Requirements: Python 3.10+, Docker for Bifrost only, the same keys plus Groq (free; contamination check only).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
