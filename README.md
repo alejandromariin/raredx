@@ -33,6 +33,14 @@ Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 Every piece of information says where it comes from (HPO files, an LLM, Tavily).
 
+Screenshots of a real run (the "tall, long fingers, lens dislocation" example of the interface):
+
+| Review | Differential |
+|---|---|
+| ![The findings read from the note, each linked to its words, with present / absent switches and alternatives](docs/review.png) | ![Live progress per source, confidence level, most useful next findings and the ranked differential](docs/differential.png) |
+
+![Why Marfan syndrome: summary, findings that fit, typical findings not mentioned, gene to test and live evidence from Tavily](docs/why.png)
+
 ## What's new
 
 Phenotype-driven tools rank diseases by comparing a patient's HPO terms with curated disease annotations; LLM-based systems, including recent agentic ones such as DeepRare ([Zhao et al., 2025](https://arxiv.org/abs/2506.20430)), propose diagnoses from the clinical description. raredx combines both and adds:
