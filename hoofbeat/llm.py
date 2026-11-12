@@ -10,8 +10,8 @@ It does three things:
 
 Cache and spend live in .cache/llm.sqlite (not committed).
 Command line:
-  python -m raredx.llm ping     # one tiny test call through Bifrost
-  python -m raredx.llm spend    # how much we have spent so far
+  python -m hoofbeat.llm ping     # one tiny test call through Bifrost
+  python -m hoofbeat.llm spend    # how much we have spent so far
 
 Embeddings (turning a text into a list of numbers, so similar meanings get similar
 numbers) also go through here: embed("openai/text-embedding-3-small", ["short stature"]).
@@ -136,7 +136,7 @@ class LLMClient:
 
         # 2. CACHE: same model + same request = same key
         key = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-        use_cache = use_cache and not os.environ.get("RAREDX_NO_CACHE")   # set to measure real time and cost
+        use_cache = use_cache and not os.environ.get("HOOFBEAT_NO_CACHE")   # set to measure real time and cost
         row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone() if use_cache else None
         if row:
             return {**json.loads(row[0]), "usd": 0.0, "cached": True}
@@ -182,7 +182,7 @@ class LLMClient:
         out: dict[int, np.ndarray] = {}
         todo = []
         for i, t in enumerate(texts):
-            read = use_cache and not os.environ.get("RAREDX_NO_CACHE")
+            read = use_cache and not os.environ.get("HOOFBEAT_NO_CACHE")
             row = self.db.execute("SELECT response FROM cache WHERE key = ?", (key_of(t),)).fetchone() if read else None
             if row:
                 out[i] = np.frombuffer(base64.b64decode(row[0]), dtype=np.float32)

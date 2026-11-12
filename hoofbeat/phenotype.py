@@ -18,7 +18,7 @@ The HPO index (embedding of every HPO name and synonym) is built once, about 0.0
 and saved in data/processed/.
 
 Command line (needs Bifrost running):
-  python -m raredx.phenotype "4-year-old boy with seizures and very long fingers."
+  python -m hoofbeat.phenotype "4-year-old boy with seizures and very long fingers."
 """
 from __future__ import annotations
 

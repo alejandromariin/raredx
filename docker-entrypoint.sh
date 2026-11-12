@@ -3,6 +3,6 @@
 set -e
 if [ ! -f data/raw/hp.json ] || [ ! -f data/raw/phenotype.hpoa ]; then
     echo "First start: downloading the datasets (HPO, Orphanet, phenopacket-store)..."
-    python -m raredx.data
+    python -m hoofbeat.data
 fi
-exec uvicorn raredx.api:app --host 0.0.0.0 --port 8000
+exec uvicorn hoofbeat.api:app --host 0.0.0.0 --port 8000

@@ -1,4 +1,4 @@
-# The raredx app (API + interface). Started with Bifrost by `docker compose up`.
+# The Hoofbeat app (API + interface). Started with Bifrost by `docker compose up`.
 FROM python:3.12-slim
 
 # libgomp1: OpenMP runtime needed by LightGBM
@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 make \
 
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE Makefile settings.yaml ./
-COPY raredx ./raredx
+COPY hoofbeat ./hoofbeat
 COPY frontend ./frontend
 COPY models ./models
 COPY results ./results

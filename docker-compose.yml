@@ -1,6 +1,7 @@
 # Everything with one command:  docker compose up --build   ->  http://localhost:8000
 #   bifrost: the gateway every LLM call goes through (http://localhost:8080)
 #   app:     API + interface; downloads the datasets on its first start
+name: hoofbeat                   # docker compose project name (containers: hoofbeat-app-1, hoofbeat-bifrost-1)
 services:
   bifrost:
     image: maximhq/bifrost:v1.3.9

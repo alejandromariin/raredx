@@ -1,6 +1,6 @@
 """Data step: download the datasets and build the tables the rest of the project uses.
 
-Run it with `make data` (or `python -m raredx.data`). It does three things, in order:
+Run it with `make data` (or `python -m hoofbeat.data`). It does three things, in order:
   1. Download the raw files into data/raw/.
   2. Build data/processed/cases.jsonl: one line per patient (symptoms, diagnosis, source paper).
   3. Ask PubMed when each source paper was published -> data/processed/pmid_dates.csv.
@@ -97,7 +97,7 @@ SOURCES: dict[str, str] = {
 
 def _fetch(url: str, dest: Path) -> None:
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers={"User-Agent": "raredx/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "hoofbeat/0.1"})
     with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as out:
         shutil.copyfileobj(resp, out)
     tmp.replace(dest)
@@ -229,7 +229,7 @@ def fetch_dates(pmids: list[str], out_path: Path) -> dict:
 
     for i in range(0, len(todo), BATCH):
         chunk = todo[i : i + BATCH]
-        params = {"db": "pubmed", "retmode": "json", "id": ",".join(p.removeprefix("PMID:") for p in chunk), "tool": "raredx"}
+        params = {"db": "pubmed", "retmode": "json", "id": ",".join(p.removeprefix("PMID:") for p in chunk), "tool": "hoofbeat"}
         if api_key:
             params["api_key"] = api_key
         if email:

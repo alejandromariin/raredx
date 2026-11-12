@@ -1,15 +1,17 @@
-# raredx
+# Hoofbeat
 
-**Differential diagnosis support for rare diseases.** A doctor writes a clinical note; raredx codes the findings, lets the doctor review them, and returns a ranked, explained list of rare diseases to consider, with the findings that would best tell them apart and live evidence from the literature.
+**Differential diagnosis support for rare diseases.** A doctor writes a clinical note; Hoofbeat codes the findings, lets the doctor review them, and returns a ranked, explained list of rare diseases to consider, with the findings that would best tell them apart and live evidence from the literature.
 
-> **Not a diagnostic tool.** raredx is a research prototype to support clinicians. It does not diagnose and must not be used for clinical decisions.
+*The name comes from the medical saying "when you hear hoofbeats, think of horses, not zebras": common diagnoses come first. Patients with rare diseases are the zebras, and Hoofbeat helps notice when the hoofbeats may belong to one.*
+
+> **Not a diagnostic tool.** Hoofbeat is a research prototype to support clinicians. It does not diagnose and must not be used for clinical decisions.
 
 Built for the Global AI Hackathon (Geek Room x HackCulture), November 2026.
 
 | On 500 held-out published patients | Correct disease ranked first | Correct disease in the top 10 |
 |---|---|---|
 | Best single source (GPT-6 Luna) | 15.6 % | 31.8 % |
-| **raredx (learned fusion of ontology + 2 LLMs)** | **26.0 %** | **41.0 %** |
+| **Hoofbeat (learned fusion of ontology + 2 LLMs)** | **26.0 %** | **41.0 %** |
 
 +10.4 points in top 1 (95 % CI +7.4 to +13.6, paired bootstrap, p < 0.001), with an evaluation built to avoid leakage from the published cases. About 12 s and 0.001 $ per patient.
 
@@ -43,7 +45,7 @@ Screenshots of a real run (the "tall, long fingers, lens dislocation" example of
 
 ## What's new
 
-Phenotype-driven tools rank diseases by comparing a patient's HPO terms with curated disease annotations; LLM-based systems, including recent agentic ones such as DeepRare ([Zhao et al., 2025](https://arxiv.org/abs/2506.20430)), propose diagnoses from the clinical description. raredx combines both and adds:
+Phenotype-driven tools rank diseases by comparing a patient's HPO terms with curated disease annotations; LLM-based systems, including recent agentic ones such as DeepRare ([Zhao et al., 2025](https://arxiv.org/abs/2506.20430)), propose diagnoses from the clinical description. Hoofbeat combines both and adds:
 
 - **A learned fusion, measured against each source.** A ranking model (LightGBM, lambdarank) learns from 1,000 published cases when to trust the ontology and when to trust each LLM. It beats the best single source by 10 points in top 1 on held-out cases, while combining the same sources without learning (reciprocal rank fusion) or linearly (logistic regression) does not.
 - **An evaluation designed against leakage.** Train / validation / test are split by publication, and when a case is evaluated the ontology ranker ignores every annotation curated from that case's own paper. Without this guard the ranker's top-1 accuracy doubles (14 % -> 28 % on validation): many disease annotations come from the very papers the test cases are taken from. LLM memorisation is checked with an open model whose training cutoff falls inside the dataset.
@@ -164,7 +166,7 @@ Going through a free-text note costs almost nothing in diagnostic accuracy (top 
 
 ## Cost and time
 
-Measured on the three illustrative cases of the interface with all caches off, so every call is real (`python -m raredx.evaluate app-timing`, `results/cost_time_app.json`):
+Measured on the three illustrative cases of the interface with all caches off, so every call is real (`python -m hoofbeat.evaluate app-timing`, `results/cost_time_app.json`):
 
 | Step | Time per patient |
 |---|---|
@@ -197,6 +199,7 @@ Measured on the three illustrative cases of the interface with all caches off, s
 **With Docker (one command).** Requirements: Docker, and API keys for OpenAI and Google AI Studio (free); Tavily is optional (live evidence).
 
 ```bash
+git clone https://github.com/alejandromariin/hoofbeat.git && cd hoofbeat
 cp .env.example .env            # then add your API keys
 docker compose up --build       # or: make app
 ```
@@ -212,7 +215,7 @@ cp .env.example .env            # then add your API keys
 make data                       # download datasets, build the case table, fetch publication dates
 make split                      # train / validation / test samples
 make gateway                    # start Bifrost on http://localhost:8080
-python3 -m raredx.llm ping      # check the gateway and the API key
+python3 -m hoofbeat.llm ping    # check the gateway and the API key
 make api                        # API + interface on http://localhost:8000 (API docs at /docs)
 ```
 
@@ -227,10 +230,10 @@ make eval                       # every evaluation (needs the LLM answers: cache
 Other commands:
 
 ```bash
-python3 -m raredx.pipeline "3-year-old girl who does not walk yet, with frequent seizures, a small head and low-set ears." --sex female --age 3
-python3 -m raredx.phenotype "4-year-old boy with seizures since age 2, widely spaced eyes and very long fingers."
-python3 -m raredx.evidence "Rett syndrome"
-python3 -m raredx.evaluate llm --model openai/gpt-6-luna --split val    # one LLM alone
+python3 -m hoofbeat.pipeline "3-year-old girl who does not walk yet, with frequent seizures, a small head and low-set ears." --sex female --age 3
+python3 -m hoofbeat.phenotype "4-year-old boy with seizures since age 2, widely spaced eyes and very long fingers."
+python3 -m hoofbeat.evidence "Rett syndrome"
+python3 -m hoofbeat.evaluate llm --model openai/gpt-6-luna --split val  # one LLM alone
 ```
 
 Bifrost: after editing `bifrost/config.json`, `docker compose restart bifrost`; after adding keys to `.env`, `docker compose up -d --force-recreate bifrost`.
@@ -238,7 +241,7 @@ Bifrost: after editing `bifrost/config.json`, `docker compose restart bifrost`; 
 ## Repository layout
 
 ```
-raredx/
+hoofbeat/
   data.py       download datasets, build the case table, fetch PubMed dates
   phenotype.py  clinical note -> HPO findings (LLM + embeddings)
   ranker.py     ontology ranker

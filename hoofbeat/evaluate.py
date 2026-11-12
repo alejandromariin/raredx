@@ -1,6 +1,6 @@
 """Evaluation: data splits, leakage guards and metrics.
 
-Run the split with `make split` (or `python -m raredx.evaluate split`).
+Run the split with `make split` (or `python -m hoofbeat.evaluate split`).
 """
 from __future__ import annotations
 
@@ -765,7 +765,7 @@ def eval_app_timing() -> dict:
     import os
     import time as _time
     import numpy as np
-    os.environ["RAREDX_NO_CACHE"] = "1"
+    os.environ["HOOFBEAT_NO_CACHE"] = "1"
     from .pipeline import Pipeline
     p = Pipeline()
     rows = []

@@ -5,7 +5,7 @@ For each patient and each model:
      explicitly absent, age and sex. The LLM never sees the source paper or the answer.
   2. ANSWER: the LLM replies with JSON, e.g.
        {"diagnoses": [{"name": "Marfan syndrome", "omim": "154700"}, ...]}
-  3. CODES: each name is translated to OMIM codes with raredx.diseases, e.g.
+  3. CODES: each name is translated to OMIM codes with hoofbeat.diseases, e.g.
        1. "Marfan syndrome" (154700) -> {OMIM:154700}
        2. "Loeys-Dietz syndrome"     -> {OMIM:609192, OMIM:610168, ...}  (a family)
 """

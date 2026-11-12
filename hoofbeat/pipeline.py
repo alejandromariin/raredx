@@ -17,8 +17,8 @@ If an LLM fails, the flow goes on without it: the fusion treats it as having pro
 nothing and the result lists it in "failed".
 
 Command line (needs Bifrost running; approves the symptoms without changes):
-  python -m raredx.pipeline "3-year-old girl who does not walk yet, frequent seizures..."
-  python -m raredx.pipeline --hpo HP:0001250,HP:0000252 --sex female --age 3
+  python -m hoofbeat.pipeline "3-year-old girl who does not walk yet, frequent seizures..."
+  python -m hoofbeat.pipeline --hpo HP:0001250,HP:0000252 --sex female --age 3
 """
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class Pipeline:
         self.fusion, self.models = saved["model"], saved["llm_models"]
         self.features = FeatureBuilder(self.ranker, self.ensemble, self.models)
         took("fusion model + prevalence")
-        # confidence levels measured on validation (`python -m raredx.evaluate calibrate`)
+        # confidence levels measured on validation (`python -m hoofbeat.evaluate calibrate`)
         calib = ROOT / "models" / "confidence.json"
         self.calibration = json.loads(calib.read_text(encoding="utf-8")) if calib.exists() else None
         cfg = load_settings()["llm"]["utility"]

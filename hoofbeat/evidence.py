@@ -70,7 +70,7 @@ class Evidence:
         if time_range:
             body["time_range"] = time_range
         key = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
-        row = None if os.environ.get("RAREDX_NO_CACHE") else \
+        row = None if os.environ.get("HOOFBEAT_NO_CACHE") else \
             self.db.execute("SELECT response FROM tavily WHERE key = ?", (key,)).fetchone()
         if row:
             return json.loads(row[0])

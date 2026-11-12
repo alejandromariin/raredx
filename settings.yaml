@@ -3,7 +3,7 @@ paths:
   raw: data/raw
   processed: data/processed
   results: results
-data_versions:          # pinned in raredx/data.py
+data_versions:          # pinned in hoofbeat/data.py
   phenopacket_store: 0.1.27
   hpo: v2026-09-01
 budget_usd: 50          # max total API spend for the hackathon

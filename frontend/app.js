@@ -1,5 +1,5 @@
-// raredx interface: three views, case -> review -> differential.
-// It talks to the API in raredx/api.py, served from the same address.
+// Hoofbeat interface: three views, case -> review -> differential.
+// It talks to the API in hoofbeat/api.py, served from the same address.
 // No framework: the state lives in `state`, and each view has a render function.
 
 "use strict";

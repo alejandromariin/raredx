@@ -1,6 +1,6 @@
 """HTTP API for the interface: the bridge between the LangGraph flow and the web page.
 
-Start it (with Bifrost running):  make api   (= uvicorn raredx.api:app --port 8000)
+Start it (with Bifrost running):  make api   (= uvicorn hoofbeat.api:app --port 8000)
 Interface:                        http://localhost:8000
 Interactive docs:                 http://localhost:8000/docs
 
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="raredx", version="0.1.0", lifespan=lifespan,
+app = FastAPI(title="Hoofbeat", version="0.1.0", lifespan=lifespan,
               description="Rare-disease differential diagnosis support. Research prototype: not a diagnostic tool.")
 # the interface runs on another port during development (e.g. Vite on 5173)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

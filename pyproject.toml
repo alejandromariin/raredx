@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "raredx"
+name = "hoofbeat"
 version = "0.1.0"
 description = "Rare-disease differential diagnosis support"
 readme = "README.md"
@@ -24,4 +24,4 @@ dependencies = [
 dev = ["pytest", "ruff", "jupyter"]
 
 [tool.setuptools.packages.find]
-include = ["raredx*"]
+include = ["hoofbeat*"]
