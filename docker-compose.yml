@@ -1,5 +1,6 @@
-# Bifrost: the single gateway every LLM call goes through.
-# Start it with `make gateway`; it listens on http://localhost:8080
+# Everything with one command:  docker compose up --build   ->  http://localhost:8000
+#   bifrost: the gateway every LLM call goes through (http://localhost:8080)
+#   app:     API + interface; downloads the datasets on its first start
 services:
   bifrost:
     image: maximhq/bifrost:v1.3.9
@@ -8,4 +9,18 @@ services:
     volumes:
       - ./bifrost:/app/data      # config.json lives here; Bifrost also writes its logs DB here
     env_file: .env               # provider API keys (never committed)
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      BIFROST_URL: http://bifrost:8080   # inside docker the gateway is reached by its service name
+    volumes:
+      - ./data:/app/data         # downloaded datasets and HPO index, kept between restarts
+      - ./.cache:/app/.cache     # LLM and Tavily answer cache, shared with the evaluation
+    depends_on:
+      - bifrost
     restart: unless-stopped

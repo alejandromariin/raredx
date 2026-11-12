@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: data split gateway gateway-stop train api eval test app
+.PHONY: data split gateway gateway-stop train api eval test app app-stop
 
 data:   ## Download and process all datasets
 	$(PYTHON) -m raredx.data
@@ -8,7 +8,7 @@ data:   ## Download and process all datasets
 split:  ## Split cases by paper and pick the train/val/test samples
 	$(PYTHON) -m raredx.evaluate split
 
-gateway:  ## Start Bifrost (LLM gateway) on http://localhost:8080
+gateway:  ## Start only Bifrost (LLM gateway) on http://localhost:8080, to run the app or evaluation locally
 	docker compose up -d bifrost
 
 gateway-stop:
@@ -26,5 +26,10 @@ eval:   ## Run every evaluation from the caches and write results/ (no new LLM c
 test:   ## Final evaluation on the 500 test cases -> results/test.json
 	$(PYTHON) -m raredx.evaluate test
 
-app:    ## Start Bifrost, backend and frontend
-	@echo "TODO: docker compose up"
+app:    ## Everything in Docker (Bifrost + API + interface) -> http://localhost:8000
+	docker compose up -d --build
+	@echo "Starting... first start downloads the data (a few minutes): docker compose logs -f app"
+	@echo "Then open http://localhost:8000"
+
+app-stop:
+	docker compose down

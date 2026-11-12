@@ -1,0 +1,11 @@
+.git
+.venv
+venv
+.env
+.cache
+data
+bifrost
+Claude outputs
+**/__pycache__
+*.egg-info
+node_modules

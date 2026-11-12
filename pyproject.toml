@@ -10,20 +10,14 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
-    "langgraph",
-    "openai",
-    "fastapi",
-    "uvicorn",
-    "httpx",
+    "langgraph",       # the flow (pipeline.py)
+    "fastapi",         # API (api.py)
+    "uvicorn",         # web server for the API
     "pydantic",
-    "pyyaml",
-    "python-dotenv",
-    "pandas",
+    "pyyaml",          # settings.yaml
     "numpy",
-    "scikit-learn",
-    "lightgbm",
-    "hpo3",
-    "tavily-python",
+    "scikit-learn",    # logistic regression reference (fusion.py)
+    "lightgbm",        # learned fusion (fusion.py)
 ]
 
 [project.optional-dependencies]
